@@ -98,6 +98,9 @@ def measure_clip(mp4_path: Path) -> dict:
         speech_start_ms = None  # the silence detector ran on the untrimmed audio
 
     speech_result = measure_speech(words, speech_start_ms)
+    if trim is not None:
+        # After a trim the first word always sits ~0.2 s in, so the delay means nothing.
+        speech_result["delay_ms"] = None
     face_result = compute_face_stats(face_frames, start_seconds)
 
     measures = {

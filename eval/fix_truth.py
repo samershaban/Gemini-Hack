@@ -23,10 +23,14 @@ def main() -> None:
         raise SystemExit(f"No round with id {arguments.round_id}")
 
     old_result = round_info["result"]
+    if old_result is None:
+        # Scoring an unfinished round would mark it finished (no more secret for late
+        # players, and it would show up in the eval). Fix rounds after the reveal only.
+        raise SystemExit(f"Round {arguments.round_id} hasn't been revealed yet; nothing to fix")
     db.save_confirmed_lie(arguments.round_id, arguments.statement)
     new_result = score_round_result(arguments.round_id, arguments.statement, "corrected_after")
 
-    old_text = f"lie {old_result.get('lie_statement', old_result['lie_index'] + 1)}, correct={old_result['correct']}" if old_result else "not revealed"
+    old_text = f"lie {old_result.get('lie_statement', old_result['lie_index'] + 1)}, correct={old_result['correct']}"
     print(f"Round {arguments.round_id}: was {old_text}; now lie {arguments.statement}, correct={new_result['correct']}")
 
 

@@ -38,9 +38,15 @@ def find_chatter_end_seconds(words: list[dict], clip_duration_seconds: float) ->
 def shift_words(words: list[dict], start_seconds: float) -> list[dict]:
     """Drop words before start_seconds and make the rest relative to it."""
     shifted_words = []
+    reached_kept_speech = False
     for word in words:
-        if word["start_s"] is not None and word["start_s"] < start_seconds:
+        word_starts_before_cut = word["start_s"] is not None and word["start_s"] < start_seconds
+        word_ends_before_cut = word["end_s"] is not None and word["end_s"] <= start_seconds
+        if word_starts_before_cut or word_ends_before_cut:
             continue
+        if word["start_s"] is None and not reached_kept_speech:
+            continue  # no timestamp and nothing kept yet: it may belong to the cut chatter
+        reached_kept_speech = True
         shifted_words.append({
             "text": word["text"],
             "start_s": round(word["start_s"] - start_seconds, 3) if word["start_s"] is not None else None,
