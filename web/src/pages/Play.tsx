@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { isMock } from '../api';
+import { isMock, mockLabel } from '../api';
 import type { Phase, Scoreboard } from '../contract';
 import { useRoom } from '../lib/room';
 
@@ -48,7 +48,7 @@ export default function Play() {
         <button className="btn ghost" disabled={!room || !name.trim()} onClick={() => join('eye')}>
           Be an extra Eye (camera)
         </button>
-        {isMock && <div className="mock-badge">MOCK API</div>}
+        {isMock && <div className="mock-badge">{mockLabel}</div>}
       </div>
     );
   }

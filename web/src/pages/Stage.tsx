@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { assetUrl, getApi, isMock } from '../api';
+import { assetUrl, getApi, isMock, mockLabel } from '../api';
 import type { AnalyzeRes, CallRes, ClipKind, ClipRes, CreateRoundRes, Phase, RevealRes, Scoreboard, ServerMsg, Tell } from '../contract';
 import { Eye, type EyeHandle } from '../eye/Eye';
 import type { Mood } from '../eye/EyeScene';
@@ -238,7 +238,7 @@ export default function Stage() {
           <span className="vs">vs</span>
           <span>ROOM {score.room}</span>
         </div>
-        {isMock && <div className="mock-badge">MOCK API</div>}
+        {isMock && <div className="mock-badge">{mockLabel}</div>}
       </header>
 
       <div className="pip">
