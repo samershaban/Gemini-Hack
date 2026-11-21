@@ -7,17 +7,20 @@ Endpoints follow the contract in "Poker Face Room Edition PRD.md". Do not change
 request or response shape without telling the Part B (web/) owner first.
 """
 
+import logging
 import shutil
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from server import db
+from server.clip_measures import measure_clip
+from server.decisions import make_decisions_client, upload_clip_and_wait_until_active
 from server.media import ClipConversionError, convert_clip_to_mp4
 from server.paths import get_round_folder
 from server.round_prompts import pick_lie_index, pick_three_prompts
@@ -25,6 +28,9 @@ from server.round_prompts import pick_lie_index, pick_three_prompts
 load_dotenv()
 
 ALLOWED_CLIP_KINDS = ["baseline", "statement", "followup", "angle"]
+CONTRACT_MEASURE_NAMES = ["delay_ms", "fillers", "blink_rate", "gaze_breaks"]
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -68,6 +74,7 @@ def create_round(request_body: CreateRoundRequest):
 @app.post("/rounds/{round_id}/clips")
 def upload_clip(
     round_id: str,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     kind: str = Form(...),
     index: int = Form(...),
@@ -108,15 +115,31 @@ def upload_clip(
         mp4_path=str(mp4_path),
     )
 
-    # Transcript (Hydrogen) and measures (audio onset, MediaPipe) come in the next step.
-    # Until then the shape matches the contract, with empty values.
+    clip_measurements = measure_clip(mp4_path)
+    db.save_clip_measurements(
+        clip_id=clip_id,
+        transcript=clip_measurements["transcript"],
+        words=clip_measurements["words"],
+        measures=clip_measurements["measures"],
+        events=clip_measurements["events"],
+    )
+
+    # Upload to the Gemini Files API after responding. Decision 1 answers faster on an
+    # uploaded file (635 ms median) than on inline video (about 1.6 s), see docs/timing_decision_1.json.
+    background_tasks.add_task(upload_clip_to_gemini, clip_id, mp4_path)
+
+    contract_measures = {name: clip_measurements["measures"][name] for name in CONTRACT_MEASURE_NAMES}
     return {
         "clip_id": clip_id,
-        "transcript": "",
-        "measures": {
-            "delay_ms": None,
-            "fillers": None,
-            "blink_rate": None,
-            "gaze_breaks": None,
-        },
+        "transcript": clip_measurements["transcript"],
+        "measures": contract_measures,
     }
+
+
+def upload_clip_to_gemini(clip_id: str, mp4_path: Path) -> None:
+    """Runs in the background. If it fails, /analyze falls back to sending the video inline."""
+    try:
+        uploaded_file = upload_clip_and_wait_until_active(make_decisions_client(), mp4_path)
+        db.save_clip_gemini_file_uri(clip_id, uploaded_file.uri)
+    except Exception as upload_error:
+        logger.warning("Gemini upload failed for clip %s: %s", clip_id, upload_error)

@@ -3,6 +3,9 @@
 # Decisions API: calibrated yes/no, choice, and score answers (score tells, pick the lie, route, gate)
 DECISION_MODEL = "gemini-decision-1"
 
+# Transcription with word-level timestamps (feeds delay, fillers, and tell times)
+TRANSCRIBE_MODEL = "gemini-3.5-transcribe"
+
 # Fast, low-cost tier: transcription, splitting statements, host table talk
 HYDROGEN_MODEL = "gemini-4-hydrogen"
 

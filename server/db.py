@@ -54,6 +54,18 @@ def create_tables() -> None:
             """
         )
     connection.close()
+    add_column_if_missing("clips", "words_json", "TEXT")
+    add_column_if_missing("clips", "events_json", "TEXT")
+
+
+def add_column_if_missing(table_name: str, column_name: str, column_type: str) -> None:
+    """Small migration helper so an older local database keeps working."""
+    connection = open_connection()
+    existing_columns = [row["name"] for row in connection.execute(f"PRAGMA table_info({table_name})")]
+    if column_name not in existing_columns:
+        with connection:
+            connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
+    connection.close()
 
 
 def insert_round(round_id: str, room: str, prompts: list[str], lie_index: int) -> None:
@@ -107,3 +119,46 @@ def insert_clip(
             ),
         )
     connection.close()
+
+
+def save_clip_measurements(
+    clip_id: str,
+    transcript: str,
+    words: list[dict],
+    measures: dict,
+    events: list[dict],
+) -> None:
+    connection = open_connection()
+    with connection:
+        connection.execute(
+            """
+            UPDATE clips SET transcript = ?, words_json = ?, measures_json = ?, events_json = ?
+            WHERE clip_id = ?
+            """,
+            (transcript, json.dumps(words), json.dumps(measures), json.dumps(events), clip_id),
+        )
+    connection.close()
+
+
+def save_clip_gemini_file_uri(clip_id: str, gemini_file_uri: str) -> None:
+    connection = open_connection()
+    with connection:
+        connection.execute("UPDATE clips SET gemini_file_uri = ? WHERE clip_id = ?", (gemini_file_uri, clip_id))
+    connection.close()
+
+
+def get_clips_for_round(round_id: str) -> list[dict]:
+    """All clips of a round, oldest first, with JSON columns decoded."""
+    connection = open_connection()
+    rows = connection.execute(
+        "SELECT * FROM clips WHERE round_id = ? ORDER BY created_at", (round_id,)
+    ).fetchall()
+    connection.close()
+    clips = []
+    for row in rows:
+        clip = dict(row)
+        for json_column in ["measures_json", "words_json", "events_json"]:
+            plain_name = json_column.replace("_json", "")
+            clip[plain_name] = json.loads(clip[json_column]) if clip[json_column] else None
+        clips.append(clip)
+    return clips
