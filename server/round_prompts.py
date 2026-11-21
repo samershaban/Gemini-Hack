@@ -26,6 +26,23 @@ ALL_PROMPTS = [
 ]
 
 
+# Easy questions everyone can answer truthfully without thinking, so the baseline shows
+# how the player talks when they're relaxed and honest.
+ALL_BASELINE_PROMPTS = [
+    "Say your name and where you're from.",
+    "What did you eat today?",
+    "How did you get here today?",
+    "What do you do for work or school?",
+    "What's the weather like outside?",
+    "What's your favorite food?",
+]
+
+
+def pick_two_baseline_prompts() -> list[str]:
+    """The first one is always the name question; the second is random."""
+    return [ALL_BASELINE_PROMPTS[0], random.choice(ALL_BASELINE_PROMPTS[1:])]
+
+
 def pick_three_prompts() -> list[str]:
     """Return three different prompts, in random order."""
     return random.sample(ALL_PROMPTS, 3)

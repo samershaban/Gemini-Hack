@@ -5,6 +5,10 @@ trim only when a few words (6 or fewer) come before a clear pause (0.8 s or more
 pause ends in the first 40% of the clip, and at least 4 words come after it.
 """
 
+import re
+
+from server.speech_measures import FILLER_WORDS
+
 MAX_CHATTER_WORDS = 6
 MIN_PAUSE_SECONDS = 0.8
 PAUSE_MUST_END_BEFORE_FRACTION = 0.4
@@ -29,6 +33,12 @@ def find_chatter_end_seconds(words: list[dict], clip_duration_seconds: float) ->
         pause_seconds = next_word["start_s"] - previous_word["end_s"]
         pause_ends_early = next_word["start_s"] <= clip_duration_seconds * PAUSE_MUST_END_BEFORE_FRACTION
         words_after_pause = len(words) - word_number
+        # "Um, uh... [pause]" is hesitation, which is a tell, not chatter: only trim when the
+        # opening has at least one real word ("ready", "ok go").
+        opening_words = [re.sub(r"[^a-z']", "", word["text"].lower()) for word in words[:word_number]]
+        opening_is_only_fillers = all(word in FILLER_WORDS or word == "" for word in opening_words)
+        if opening_is_only_fillers:
+            continue
         if pause_seconds >= MIN_PAUSE_SECONDS and pause_ends_early and words_after_pause >= MIN_WORDS_AFTER_PAUSE:
             # Keep looking: the latest qualifying pause is where the chatter ends.
             trim_at_seconds = max(next_word["start_s"] - KEEP_BEFORE_SPEECH_SECONDS, 0.0)

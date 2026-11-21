@@ -13,13 +13,13 @@ Call shape verified against https://aistudio.google.com/docs/video-understanding
 - read the JSON from interaction.output_text
 """
 
+import base64
 import logging
 from pathlib import Path
 
 from google import genai
 from pydantic import BaseModel
 
-from server.decisions import upload_clip_and_wait_until_active
 from server.models import NEON_MODEL
 
 logger = logging.getLogger(__name__)
@@ -47,21 +47,13 @@ def make_neon_client() -> genai.Client:
     return genai.Client()
 
 
-def get_or_upload_file_uri(client: genai.Client, clip: dict) -> str:
-    """Neon needs a Files API uri; reuse the one /clips uploaded if it's there."""
-    if clip.get("gemini_file_uri"):
-        return clip["gemini_file_uri"]
-    uploaded_file = upload_clip_and_wait_until_active(client, Path(clip["mp4_path"]))
-    return uploaded_file.uri
-
-
 def build_neon_video_block(client: genai.Client, clip: dict) -> dict:
-    return {
-        "type": "video",
-        "uri": get_or_upload_file_uri(client, clip),
-        "mime_type": "video/mp4",
-        "processing": LIVE_VIDEO_PROCESSING,
-    }
+    """Use the Files API uri when the background upload has finished; otherwise send the
+    clip inline. Uploading here would eat into Neon's 12 s time limit."""
+    if clip.get("gemini_file_uri"):
+        return {"type": "video", "uri": clip["gemini_file_uri"], "mime_type": "video/mp4", "processing": LIVE_VIDEO_PROCESSING}
+    video_base64 = base64.b64encode(Path(clip["mp4_path"]).read_bytes()).decode("utf-8")
+    return {"type": "video", "data": video_base64, "mime_type": "video/mp4", "processing": LIVE_VIDEO_PROCESSING}
 
 
 def ask_neon_for_json(client: genai.Client, input_blocks: list[dict], answer_model: type[BaseModel]):

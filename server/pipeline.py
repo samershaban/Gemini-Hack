@@ -47,6 +47,7 @@ PER_STATEMENT_TELLS = {
     "pitch_rise": ("pitch rise", "In {label}, does the speaker's voice pitch rise compared with the BASELINE clips?"),
     "self_correction": ("self-correction", "In {label}, does the speaker correct or restart what they were saying?"),
     "exaggerated": ("acting nervous", "In {label}, do the speaker's nervous cues look exaggerated or put on, compared with the BASELINE clips?"),
+    "implausible": ("hard to believe", "Is what the speaker claims in {label} hard to believe or impossible as stated?"),
 }
 
 
@@ -62,12 +63,24 @@ def pick_latest_clip_per_index(clips: list[dict]) -> list[dict]:
     return [latest_by_index[index] for index in sorted(latest_by_index)]
 
 
+def keep_latest_answer_per_question(followup_clips: list[dict]) -> list[dict]:
+    """If the operator re-recorded a follow-up answer, keep only the newest take for that question.
+
+    Clips come oldest first; the order of the questions is kept.
+    """
+    latest_by_question = {}
+    for clip in followup_clips:
+        question_key = clip.get("follow_up_question") or clip["clip_id"]  # untagged clips stay separate
+        latest_by_question[question_key] = clip
+    return list(latest_by_question.values())
+
+
 def load_round_clips(round_id: str) -> dict:
     """Return {"baselines": [...], "statements": [3 clips], "followups": [...]}."""
     all_clips = db.get_clips_for_round(round_id)
     baselines = pick_latest_clip_per_index([clip for clip in all_clips if clip["kind"] == "baseline"])
     statements = pick_latest_clip_per_index([clip for clip in all_clips if clip["kind"] == "statement"])
-    followups = [clip for clip in all_clips if clip["kind"] == "followup"]
+    followups = keep_latest_answer_per_question([clip for clip in all_clips if clip["kind"] == "followup"])
     if len(statements) != 3:
         raise RoundNotReadyError(f"Need 3 statement clips, have {len(statements)}")
     return {"baselines": baselines, "statements": statements, "followups": followups}
@@ -153,7 +166,12 @@ def build_decision_questions() -> dict:
     questions = {
         "which_statement_is_the_lie": {
             "type": "choice",
-            "instructions": "This is a two truths and a lie game. Exactly one of STATEMENT 1, 2, or 3 is a lie. Which one is the lie?",
+            "instructions": (
+                "This is a two truths and a lie game. Exactly one of STATEMENT 1, 2, or 3 is a lie. "
+                "Judge both HOW each statement is said (compared with the BASELINE clips and any follow-up "
+                "answers) and WHAT is said: an implausible or impossible claim is strong evidence. "
+                "Which one is the lie?"
+            ),
             "criteria": {
                 "statement_1": "STATEMENT 1 is the lie",
                 "statement_2": "STATEMENT 2 is the lie",
@@ -329,9 +347,12 @@ def analyze_round(round_id: str) -> dict:
     }
     follow_up_detail = None
     if escalate:
-        if question_future is not None:
+        top_two_before_neon = set(sorted(ALL_STATEMENTS_IN_ORDER, key=lambda n: decision_probabilities[n - 1], reverse=True)[:2])
+        top_two_after_neon = set(sorted(ALL_STATEMENTS_IN_ORDER, key=lambda n: lie_probs[n - 1], reverse=True)[:2])
+        if question_future is not None and top_two_before_neon == top_two_after_neon:
             follow_up_detail = question_future.result()  # choose_follow_up has its own timeout and template
         else:
+            # Neon changed which statements are closest, so pick the statement again from the blend.
             follow_up_detail = choose_follow_up(round_id, round_clips, lie_probs, prompts)
         analysis["follow_up"] = {"statement": follow_up_detail["statement"], "question": follow_up_detail["question"]}
 
@@ -457,8 +478,8 @@ def make_call(round_id: str) -> dict:
     statement_number = analysis["top_statement"]
     confidence = analysis["confidence"]
     cue, cue_time_seconds = pick_strongest_cue(round_clips, statement_number, analysis)
-    confidence_percent = round(confidence * 100)
-    line = f"Statement {statement_number}. {cue.capitalize()} at {cue_time_seconds:.1f} seconds. I'm {confidence_percent}% sure."
+    # No percentage here: the stage adds "I'm N percent sure" when it reads the line out.
+    line = f"Statement {statement_number}. {cue.capitalize()} at {cue_time_seconds:.1f} seconds."
 
     frame_url = None
     statement_clip = round_clips["statements"][statement_number - 1]

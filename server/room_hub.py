@@ -60,6 +60,19 @@ class RoomHub:
         for connected_phone in list(self.get_room(room_name).connections):
             await self.send_to_one(connected_phone, message)
 
+    def make_name_unique(self, room_name: str, wanted_name: str, connected_phone: "ConnectedPhone") -> str:
+        """Votes are saved by name, so two phones named "Sam" become "Sam" and "Sam 2"."""
+        taken_names = {
+            other_phone.name for other_phone in self.get_room(room_name).connections
+            if other_phone is not connected_phone and other_phone.has_joined
+        }
+        unique_name = wanted_name
+        number = 2
+        while unique_name in taken_names:
+            unique_name = f"{wanted_name} {number}"
+            number += 1
+        return unique_name
+
     def build_roster_message(self, room_name: str) -> dict:
         """Everyone who has joined (sent a join message), for the stage's player list."""
         joined_phones = [

@@ -27,7 +27,7 @@ from server.media import ClipConversionError, convert_clip_to_mp4
 from server.paths import get_round_folder
 from server.pipeline import RoundNotReadyError, analyze_round, make_call
 from server.room_hub import room_hub
-from server.round_prompts import pick_three_prompts
+from server.round_prompts import pick_three_prompts, pick_two_baseline_prompts
 from server.scoring import build_scoreboard, reveal_round
 
 load_dotenv()
@@ -96,7 +96,8 @@ def create_round(request_body: CreateRoundRequest):
     db.insert_round(round_id=round_id, room=request_body.room, prompts=prompts, lie_index=-1)
     send_to_room_from_worker_thread(request_body.room, {"type": "phase", "phase": "baseline"})
 
-    return {"round_id": round_id, "prompts": prompts}
+    # baseline_prompts is an extra field: two easy, truthful questions for the baseline clips.
+    return {"round_id": round_id, "prompts": prompts, "baseline_prompts": pick_two_baseline_prompts()}
 
 
 @app.post("/rounds/{round_id}/clips")
@@ -252,7 +253,7 @@ async def room_websocket(websocket: WebSocket, room_name: str):
             message_type = message.get("type")
 
             if message_type == "join":
-                connected_phone.name = str(message.get("name") or "anonymous")[:40]
+                connected_phone.name = room_hub.make_name_unique(room_name, str(message.get("name") or "anonymous")[:40], connected_phone)
                 connected_phone.role = "voter"  # phones only vote; the player is on stage
                 connected_phone.has_joined = True
                 await room_hub.send_player_list(room_name)
