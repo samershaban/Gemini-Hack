@@ -56,6 +56,25 @@ def create_tables() -> None:
     connection.close()
     add_column_if_missing("clips", "words_json", "TEXT")
     add_column_if_missing("clips", "events_json", "TEXT")
+    add_column_if_missing("rounds", "analysis_json", "TEXT")
+    add_column_if_missing("rounds", "call_json", "TEXT")
+    add_column_if_missing("rounds", "result_json", "TEXT")
+    add_column_if_missing("rounds", "tried_to_trick", "INTEGER")
+
+    connection = open_connection()
+    with connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS votes (
+                round_id TEXT NOT NULL REFERENCES rounds(round_id),
+                voter_name TEXT NOT NULL,
+                statement INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (round_id, voter_name)
+            )
+            """
+        )
+    connection.close()
 
 
 def add_column_if_missing(table_name: str, column_name: str, column_type: str) -> None:
@@ -85,9 +104,85 @@ def get_round(round_id: str) -> dict | None:
     connection.close()
     if row is None:
         return None
+    return decode_round_row(row)
+
+
+def decode_round_row(row: sqlite3.Row) -> dict:
+    """Turn a rounds row into a dict and decode its JSON columns."""
     round_info = dict(row)
     round_info["prompts"] = json.loads(round_info["prompts_json"])
+    for json_column in ["analysis_json", "call_json", "result_json"]:
+        plain_name = json_column.replace("_json", "")
+        column_text = round_info.get(json_column)
+        round_info[plain_name] = json.loads(column_text) if column_text else None
     return round_info
+
+
+def get_latest_round_in_room(room: str) -> dict | None:
+    connection = open_connection()
+    row = connection.execute(
+        "SELECT * FROM rounds WHERE room = ? ORDER BY created_at DESC LIMIT 1", (room,)
+    ).fetchone()
+    connection.close()
+    return decode_round_row(row) if row else None
+
+
+def get_revealed_rounds_in_room(room: str) -> list[dict]:
+    connection = open_connection()
+    rows = connection.execute(
+        "SELECT * FROM rounds WHERE room = ? AND result_json IS NOT NULL ORDER BY created_at", (room,)
+    ).fetchall()
+    connection.close()
+    return [decode_round_row(row) for row in rows]
+
+
+def get_all_revealed_rounds() -> list[dict]:
+    """Every finished round, oldest first. The eval reads these."""
+    connection = open_connection()
+    rows = connection.execute(
+        "SELECT * FROM rounds WHERE result_json IS NOT NULL ORDER BY created_at"
+    ).fetchall()
+    connection.close()
+    return [decode_round_row(row) for row in rows]
+
+
+def save_round_json(round_id: str, column_name: str, value: dict) -> None:
+    """Save analysis, call, or result JSON on a round."""
+    allowed_columns = ["analysis_json", "call_json", "result_json"]
+    if column_name not in allowed_columns:
+        raise ValueError(f"column_name must be one of {allowed_columns}")
+    connection = open_connection()
+    with connection:
+        connection.execute(f"UPDATE rounds SET {column_name} = ? WHERE round_id = ?", (json.dumps(value), round_id))
+    connection.close()
+
+
+def save_tried_to_trick(round_id: str, tried_to_trick: bool) -> None:
+    connection = open_connection()
+    with connection:
+        connection.execute("UPDATE rounds SET tried_to_trick = ? WHERE round_id = ?", (int(tried_to_trick), round_id))
+    connection.close()
+
+
+def save_vote(round_id: str, voter_name: str, statement: int) -> None:
+    """One vote per voter per round; voting again changes the vote."""
+    connection = open_connection()
+    with connection:
+        connection.execute(
+            """
+            INSERT INTO votes (round_id, voter_name, statement, created_at) VALUES (?, ?, ?, ?)
+            ON CONFLICT (round_id, voter_name) DO UPDATE SET statement = excluded.statement
+            """,
+            (round_id, voter_name, statement, get_current_time_text()),
+        )
+    connection.close()
+
+
+def get_votes_for_round(round_id: str) -> list[dict]:
+    connection = open_connection()
+    rows = connection.execute("SELECT * FROM votes WHERE round_id = ?", (round_id,)).fetchall()
+    connection.close()
+    return [dict(row) for row in rows]
 
 
 def insert_clip(

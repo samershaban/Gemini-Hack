@@ -128,3 +128,11 @@ def ask_decision_questions(client: genai.Client, input_blocks: list[dict], quest
         input=input_blocks,
         questions=questions,
     )
+
+
+def build_video_block_from_uri(file_uri: str, resolution: str | None = "low") -> dict:
+    """Same as build_video_block_from_upload, when we only saved the uri in the database."""
+    video_block = {"type": "video", "uri": file_uri, "mime_type": "video/mp4"}
+    if resolution is not None:
+        video_block["resolution"] = resolution
+    return video_block
