@@ -84,7 +84,7 @@ export type ServerMsg =
   | { type: 'vote_locked'; statement: number }
   | { type: 'error'; detail: string };
 
-export type Role = 'eye' | 'voter' | 'player';
+export type Role = 'voter' | 'player';
 
 export type ClientMsg =
   | { type: 'join'; name: string; role: Role }

@@ -51,19 +51,7 @@ export default function Play() {
         <button className="btn" disabled={!room || !name.trim()} onClick={() => join('player')}>
           I'm the player
         </button>
-        <button className="btn ghost" disabled={!room || !name.trim()} onClick={() => join('eye')}>
-          Be an extra Eye (camera)
-        </button>
         {isMock && <div className="mock-badge">{mockLabel}</div>}
-      </div>
-    );
-  }
-
-  if (joined === 'eye') {
-    return (
-      <div className="play">
-        <div className="brand">EYE · {room}</div>
-        <p>Camera angle mode comes next.</p>
       </div>
     );
   }

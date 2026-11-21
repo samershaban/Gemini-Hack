@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class ConnectedPhone:
     websocket: WebSocket
     name: str = "anonymous"
-    role: str = "voter"  # "eye", "voter", or "player"
+    role: str = "voter"  # "voter" or "player"
 
 
 @dataclass

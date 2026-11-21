@@ -251,7 +251,7 @@ async def room_websocket(websocket: WebSocket, room_name: str):
 
             if message_type == "join":
                 connected_phone.name = str(message.get("name") or "anonymous")[:40]
-                connected_phone.role = message.get("role") if message.get("role") in ["eye", "voter", "player"] else "voter"
+                connected_phone.role = message.get("role") if message.get("role") in ["voter", "player"] else "voter"
                 # A player who joins after the round started still gets the secret.
                 latest_round = db.get_latest_round_in_room(room_name)
                 if connected_phone.role == "player" and latest_round and latest_round["result"] is None:
