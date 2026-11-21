@@ -14,6 +14,7 @@ export interface CreateRoundReq {
 export interface CreateRoundRes {
   round_id: string;
   prompts: [string, string, string];
+  baseline_prompts?: [string, string]; // two easy, truthful questions for the baseline clips
 }
 
 export interface ClipUpload {

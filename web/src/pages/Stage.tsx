@@ -22,7 +22,12 @@ const SLOTS: { key: SlotKey; kind: ClipKind; index: number; label: string }[] = 
   { key: 'statement-2', kind: 'statement', index: 2, label: 'Statement 2' },
   { key: 'statement-3', kind: 'statement', index: 3, label: 'Statement 3' },
 ];
-const FOLLOWUP: (typeof SLOTS)[number] = { key: 'followup-1', kind: 'followup', index: 1, label: 'Follow-up' };
+type SlotDef = (typeof SLOTS)[number];
+type FollowUp = NonNullable<AnalyzeRes['follow_up']>;
+const MAX_FOLLOW_UPS = 3; // the server stops asking after this many (or once it's 70% sure)
+// Follow-up n gets its own slot; it's always sent as index 1 because the server tags
+// each answer with the question it was asked.
+const followupSlot = (n: number): SlotDef => ({ key: `followup-${n}`, kind: 'followup', index: 1, label: `Follow-up ${n}` });
 
 type Busy = null | 'round' | 'analyze' | 'call' | 'reveal';
 
@@ -46,8 +51,10 @@ export default function Stage() {
   const [phase, setPhase] = useState<Phase>('lobby');
   const [tells, setTells] = useState<Tell[]>([]);
   const [analysis, setAnalysis] = useState<AnalyzeRes | null>(null);
-  // kept separately: a re-analyze after the follow-up returns no follow_up
-  const [followUp, setFollowUp] = useState<AnalyzeRes['follow_up'] | null>(null);
+  // every follow-up question asked this round, in order; the last one is the current one
+  const [followUps, setFollowUps] = useState<FollowUp[]>([]);
+  // which automatic analyses already ran ("statements", "followup-1", ...), so each runs once
+  const autoAnalyzed = useRef<Set<string>>(new Set());
   const [verdict, setVerdict] = useState<CallRes | null>(null);
   const [frame, setFrame] = useState<string | null>(null);
   const [stamp, setStamp] = useState(false);
@@ -142,7 +149,8 @@ export default function Stage() {
       setSlots({});
       setTells([]);
       setAnalysis(null);
-      setFollowUp(null);
+      setFollowUps([]);
+      autoAnalyzed.current = new Set();
       setVerdict(null);
       setFrame(null);
       setStamp(false);
@@ -151,7 +159,7 @@ export default function Stage() {
       eye.current?.setSuspicion(0);
     });
 
-  const upload = async (slot: (typeof SLOTS)[number], blob: Blob) => {
+  const upload = async (slot: SlotDef, blob: Blob) => {
     if (!round) return;
     setSlots((s) => ({ ...s, [slot.key]: { s: 'uploading', blob } }));
     try {
@@ -163,7 +171,7 @@ export default function Stage() {
     }
   };
 
-  const tapSlot = async (slot: (typeof SLOTS)[number]) => {
+  const tapSlot = async (slot: SlotDef) => {
     const rec = recorder.current;
     const cur = slots[slot.key] ?? { s: 'empty' };
     if (!rec || !round) return;
@@ -192,8 +200,14 @@ export default function Stage() {
       addTells(a.tells);
       eye.current?.setSuspicion(Math.max(...a.lie_probs));
       if (a.escalate && a.follow_up) {
-        setFollowUp(a.follow_up);
-        say(a.follow_up.question);
+        const next = a.follow_up;
+        // a new question gets a new slot; a repeat of an unanswered question doesn't
+        setFollowUps((prev) => {
+          const last = prev[prev.length - 1];
+          const lastAnswered = slots[followupSlot(prev.length).key]?.s === 'done';
+          return last && last.question === next.question && !lastAnswered ? prev : [...prev, next];
+        });
+        say(next.question);
       }
     });
 
@@ -211,9 +225,12 @@ export default function Stage() {
   // frame_url failed (or empty): grab the frame locally from the clip we recorded
   const localFrame = async () => {
     if (!verdict) return;
-    const followup = slots[FOLLOWUP.key];
-    const stmt = slots[`statement-${verdict.statement}`];
-    const src = followUp?.statement === verdict.statement && followup && 'blob' in followup ? followup : stmt;
+    // prefer the latest follow-up answer about the called statement, else the statement itself
+    let src: Slot | undefined = slots[`statement-${verdict.statement}`];
+    followUps.forEach((f, i) => {
+      const answer = slots[followupSlot(i + 1).key];
+      if (f.statement === verdict.statement && answer && 'blob' in answer) src = answer;
+    });
     const blob = src && 'blob' in src ? src.blob : null;
     setFrame(blob ? await frameAt(blob, verdict.t_s ?? 1) : null); // no timestamp: an early frame
   };
@@ -232,12 +249,32 @@ export default function Stage() {
   // ---- derived ----
   const slotState = (k: string): Slot => slots[k] ?? { s: 'empty' };
   const statementsDone = SLOTS.filter((s) => s.kind === 'statement').every((s) => slotState(s.key).s === 'done');
-  const followupDone = slotState(FOLLOWUP.key).s === 'done';
-  const needsFollowup = !!followUp && !followupDone;
-  // also callable if the server escalated without a follow-up question, so a round never gets stuck
-  const canCall = !!analysis && (!analysis.escalate || followupDone || !followUp) && !verdict;
-  const reAnalyze = !!analysis?.escalate && followupDone;
+  const followUpCount = followUps.length;
+  const currentFollowUp = followUps[followUpCount - 1] ?? null;
+  const currentFollowUpSlot = followUpCount > 0 ? followupSlot(followUpCount) : null;
+  const currentFollowUpDone = !!currentFollowUpSlot && slotState(currentFollowUpSlot.key).s === 'done';
+  const needsFollowup = !!analysis?.escalate && !!currentFollowUp && !currentFollowUpDone;
+  // Gemini calls it only once it's confident (or has asked all its follow-ups): the server says so with escalate=false
+  const canCall = !!analysis && !analysis.escalate && !verdict;
+  // escape hatch so a round never gets stuck: unsure but no question came back, or analyzing failed
+  const callAnyway = !!analysis && analysis.escalate && !verdict && busy === null && (!analysis.follow_up || error !== null);
+  // manual retry, only when an automatic analysis failed
+  const retryAnalyze = error !== null && busy === null && !verdict && statementsDone && (!analysis || (analysis.escalate && currentFollowUpDone));
+  const baselinesDone = SLOTS.filter((s) => s.kind === 'baseline').every((s) => slotState(s.key).s === 'done');
   const visibleTells = tells.slice(-8);
+
+  // ---- automatic analysis ----
+  // Statement 3 uploaded -> analyze. Each follow-up answer uploaded -> analyze again.
+  useEffect(() => {
+    if (!round || verdict || busy !== null) return;
+    if (statementsDone && !analysis && !autoAnalyzed.current.has('statements')) {
+      autoAnalyzed.current.add('statements');
+      analyze();
+    } else if (currentFollowUpSlot && currentFollowUpDone && analysis?.escalate && !autoAnalyzed.current.has(currentFollowUpSlot.key)) {
+      autoAnalyzed.current.add(currentFollowUpSlot.key);
+      analyze();
+    }
+  }); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="stage">
@@ -266,6 +303,16 @@ export default function Stage() {
       </div>
 
       <aside className="side-right">
+        {round?.baseline_prompts && !verdict && !baselinesDone && (
+          <ol className="prompts baseline-prompts">
+            <li className="prompts-tag">BASELINE · just tell the truth</li>
+            {round.baseline_prompts.map((p, i) => (
+              <li key={i}>
+                <b>B{i + 1}</b> {p}
+              </li>
+            ))}
+          </ol>
+        )}
         {round && !verdict && (
           <ol className="prompts">
             {round.prompts.map((p, i) => (
@@ -316,10 +363,12 @@ export default function Stage() {
       )}
 
       <footer className="controls">
-        {needsFollowup && followUp && (
+        {needsFollowup && currentFollowUp && (
           <div className="followup-card">
-            <div className="followup-tag">ABOUT STATEMENT {followUp.statement}…</div>
-            <div className="followup-q">{followUp.question}</div>
+            <div className="followup-tag">
+              FOLLOW-UP {followUpCount} OF {MAX_FOLLOW_UPS} · ABOUT STATEMENT {currentFollowUp.statement}…
+            </div>
+            <div className="followup-q">{currentFollowUp.question}</div>
           </div>
         )}
         {!round ? (
@@ -329,7 +378,7 @@ export default function Stage() {
         ) : (
           <>
             <div className="slots" hidden={!!verdict}>
-              {[...SLOTS, ...(followUp ? [FOLLOWUP] : [])].map((slot) => (
+              {[...SLOTS, ...followUps.map((_, i) => followupSlot(i + 1))].map((slot) => (
                 <SlotButton
                   key={slot.key}
                   label={slot.label}
@@ -340,20 +389,21 @@ export default function Stage() {
               ))}
             </div>
             <div className="actions">
-              {!analysis && (
-                <button className="btn" disabled={!statementsDone || busy !== null} onClick={analyze}>
-                  {busy === 'analyze' ? 'Reading…' : 'Analyze'}
+              {busy === 'analyze' && <span className="hint">Reading the tells…</span>}
+              {retryAnalyze && (
+                <button className="btn" onClick={analyze}>
+                  Try analyzing again
                 </button>
               )}
-              {needsFollowup && <span className="hint">Record the follow-up answer →</span>}
-              {reAnalyze && !verdict && (
-                <button className="btn ghost" disabled={busy !== null} onClick={analyze}>
-                  {busy === 'analyze' ? 'Reading…' : 'Re-analyze'}
-                </button>
-              )}
+              {needsFollowup && busy === null && <span className="hint">Record the answer to follow-up {followUpCount} →</span>}
               {canCall && (
                 <button className="btn hot" disabled={busy !== null} onClick={call}>
                   {busy === 'call' ? 'Deciding…' : 'Call it'}
+                </button>
+              )}
+              {callAnyway && (
+                <button className="btn ghost" onClick={call}>
+                  Call it now ({Math.round(analysis!.confidence * 100)}% sure)
                 </button>
               )}
               {verdict && !reveal && (

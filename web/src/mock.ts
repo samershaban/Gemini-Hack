@@ -50,6 +50,7 @@ interface MockRound {
   lieIndex: number; // 0-based
   analyses: number;
   hadFollowup: boolean;
+  followups: number; // answers recorded; the mock asks two follow-ups before it's confident
   votes: Map<string, number>;
 }
 const rounds = new Map<string, MockRound>();
@@ -70,14 +71,17 @@ function roundOf(id: string): MockRound {
 // Hybrid mode (VITE_REAL): the real server owns some endpoints, and the mock is told about
 // rounds and clips it did not create so its later endpoints keep working.
 export function adoptRound(round_id: string, room: string, lieIndex = 1) {
-  rounds.set(round_id, { room, lieIndex, analyses: 0, hadFollowup: false, votes: new Map() });
+  rounds.set(round_id, { room, lieIndex, analyses: 0, hadFollowup: false, followups: 0, votes: new Map() });
   broadcast(room, { type: 'phase', phase: 'baseline' });
 }
 export function noteClip(round_id: string, kind: ClipKind) {
   const r = rounds.get(round_id);
   if (!r) return;
   if (kind === 'statement') broadcast(r.room, { type: 'phase', phase: 'statements' });
-  if (kind === 'followup') r.hadFollowup = true;
+  if (kind === 'followup') {
+    r.hadFollowup = true;
+    r.followups += 1;
+  }
 }
 
 const PROMPTS: [string, string, string][] = [
@@ -101,7 +105,7 @@ export const mockApi: Api = {
     const round_id = `r${++seq}-${Date.now().toString(36)}`;
     const prompts = PROMPTS[seq % PROMPTS.length];
     adoptRound(round_id, room);
-    return { round_id, prompts };
+    return { round_id, prompts, baseline_prompts: ["Say your name and where you're from.", 'What did you eat today?'] };
   },
 
   async postClip(roundId, clip): Promise<ClipRes> {
@@ -133,7 +137,7 @@ export const mockApi: Api = {
     r.analyses++;
     broadcast(r.room, { type: 'phase', phase: 'thinking' });
 
-    const confident = r.hadFollowup;
+    const confident = r.followups >= 2; // like the real server: keep asking until sure
     const tells = confident
       ? [
           { statement: 2, t_s: 0.6, label: 'pause 1.4s' },
@@ -165,7 +169,10 @@ export const mockApi: Api = {
         confidence: 0.58,
         tells,
         escalate: true,
-        follow_up: { statement: 2, question: 'Which route did you take up the mountain, and how long did it take?' },
+        follow_up:
+          r.followups === 0
+            ? { statement: 2, question: 'Which route did you take up the mountain, and how long did it take?' }
+            : { statement: 1, question: 'What was the name of the restaurant, and what did you order?' },
       };
     }
     return { lie_probs: [0.08, 0.86, 0.06], confidence: 0.86, tells, escalate: false };
