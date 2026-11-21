@@ -110,7 +110,12 @@ def describe_measured_differences(statement_number: int, differences: dict) -> s
     return f"STATEMENT {statement_number} measured difference from BASELINE: " + ", ".join(readable_parts) + "."
 
 
-def build_decision_input(round_clips: dict, differences_by_statement: dict) -> list[dict]:
+def build_decision_input(
+    round_clips: dict,
+    differences_by_statement: dict,
+    pressed_statement: int | None = None,
+) -> list[dict]:
+    """pressed_statement: which statement the follow-up question was about (from the last analysis)."""
     input_blocks = []
     for baseline_number, baseline_clip in enumerate(round_clips["baselines"], start=1):
         input_blocks.append(build_text_block(f"BASELINE {baseline_number} (the player telling the truth, to learn how they normally act):"))
@@ -119,8 +124,13 @@ def build_decision_input(round_clips: dict, differences_by_statement: dict) -> l
         input_blocks.append(build_text_block(f"STATEMENT {statement_number}:"))
         input_blocks.append(build_video_block_for_clip(statement_clip))
     for followup_clip in round_clips["followups"][-MAX_FOLLOW_UPS:]:
-        pressed_statement = followup_clip["statement_index"]
-        input_blocks.append(build_text_block(f"FOLLOW-UP answer, after being pressed about STATEMENT {pressed_statement}:"))
+        # The stage always sends the follow-up clip with index 1, so the statement it was
+        # about comes from the follow-up question we asked, not from the clip's index.
+        if pressed_statement is not None:
+            followup_label = f"FOLLOW-UP answer, after being pressed about STATEMENT {pressed_statement}:"
+        else:
+            followup_label = "FOLLOW-UP answer, after being pressed with one more question:"
+        input_blocks.append(build_text_block(followup_label))
         input_blocks.append(build_video_block_for_clip(followup_clip))
 
     measured_lines = [
@@ -208,12 +218,18 @@ def analyze_round(round_id: str) -> dict:
         for statement_number, statement_clip in enumerate(round_clips["statements"], start=1)
     }
 
+    # If we already asked a follow-up question, remember which statement it was about.
+    previous_analysis = db.get_round(round_id)["analysis"]
+    pressed_statement = None
+    if previous_analysis and previous_analysis.get("follow_up"):
+        pressed_statement = previous_analysis["follow_up"]["statement"]
+
     decision_answers = None
     source = "decision_1"
     try:
         decision_result = ask_decision_questions(
             make_decisions_client(),
-            build_decision_input(round_clips, differences_by_statement),
+            build_decision_input(round_clips, differences_by_statement, pressed_statement),
             build_decision_questions(),
         )
         decision_answers = decision_result.answers
