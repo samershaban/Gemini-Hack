@@ -56,7 +56,7 @@ export default function Play() {
         <input className="field" placeholder="ROOM" value={room} maxLength={4} onChange={(e) => setRoom(e.target.value.toUpperCase())} />
         <input className="field" placeholder="Your name" value={name} maxLength={16} onChange={(e) => setName(e.target.value)} />
         <button className="btn big" disabled={!room || !name.trim()} onClick={join}>
-          Vote
+          Join
         </button>
         {isMock && <div className="mock-badge">{mockLabel}</div>}
       </div>
