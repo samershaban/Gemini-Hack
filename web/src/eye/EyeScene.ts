@@ -31,6 +31,10 @@ export interface EyeApi {
   setMood(m: Mood): void;
   blink(): void;
   dispose(): void;
+  /** The Babylon scene, so a page can add its own props (null for the SVG fallback). */
+  babylonScene?(): Scene | null;
+  /** Drop in from above with a bounce (start page entrance). */
+  dropIn?(): void;
 }
 
 export const PALETTE = {
@@ -138,6 +142,7 @@ export class EyeScene implements EyeApi {
   private blinkUntil = 0;
   private nextBlink = 2.5;
   private shake = 0;
+  private dropStartedAt: number | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true }, true);
@@ -233,6 +238,12 @@ export class EyeScene implements EyeApi {
   blink() {
     this.blinkUntil = this.t + 0.13;
   }
+  babylonScene() {
+    return this.scene;
+  }
+  dropIn() {
+    this.dropStartedAt = this.t;
+  }
 
   private tick(dt: number) {
     dt = Math.min(dt, 0.05);
@@ -280,7 +291,14 @@ export class EyeScene implements EyeApi {
     const bob = Math.sin(this.t * 1.8) * 0.08 * (1 - cur.zoom);
     this.shake = damp(this.shake, 0, 5, dt);
     const sh = this.shake * 0.12;
-    this.rig.position.set((Math.random() - 0.5) * sh, bob + (Math.random() - 0.5) * sh, 0);
+    // drop-in: starts high above and bounces to rest (a decaying cosine), about 1.5 s
+    let drop = 0;
+    if (this.dropStartedAt !== null) {
+      const since = this.t - this.dropStartedAt;
+      drop = since < 2 ? 5 * Math.exp(-4.5 * since) * Math.cos(9 * since) : 0;
+      if (since >= 2) this.dropStartedAt = null;
+    }
+    this.rig.position.set((Math.random() - 0.5) * sh, bob + drop + (Math.random() - 0.5) * sh, 0);
     cur.spin = mood === 'dizzy' ? cur.spin + dt * 3 : damp(cur.spin, Math.round(cur.spin / (2 * Math.PI)) * 2 * Math.PI, 4, dt);
     this.rig.rotation.z = Math.sin(cur.spin) * 0.35 * cur.dizzy;
 

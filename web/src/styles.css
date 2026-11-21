@@ -138,9 +138,23 @@ b, .brand, .btn, .slot-label, .stamp, .busted-big, .reveal-big, .vote, .phase, .
 @keyframes chip-pop-in { from { transform: scale(0.3); opacity: 0; } }
 
 /* ---------- home ---------- */
-.home { gap: 12px; }
-.home-eye { position: relative; width: min(52vh, 86vw); aspect-ratio: 1; margin: -12px 0 -4px; }
-.home-tagline { margin: 0 0 6px; max-width: 340px; text-align: center; font-size: 19px; font-weight: 700; line-height: 1.25; }
+/* Full-screen Babylon scene (Ogle, sunburst, cards, chips) with the title on top and the buttons at the bottom. */
+.home { position: fixed; inset: 0; overflow: hidden; background: var(--yellow); }
+.home-scene { position: absolute; inset: 0; pointer-events: none; }
+.home-ui { position: relative; z-index: 1; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: max(20px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); pointer-events: none; }
+.home-ui a, .home-ui button { pointer-events: auto; }
+.home-title { margin: 0; display: flex; font-size: clamp(44px, 9vw, 104px); line-height: 1; letter-spacing: 0.02em; color: var(--yellow); -webkit-text-stroke: 3px var(--black); paint-order: stroke fill; text-shadow: 6px 6px 0 var(--black); }
+.home-title span { display: inline-block; animation: title-drop 0.7s cubic-bezier(0.2, 1.8, 0.4, 1) both, title-bob 2.6s ease-in-out infinite; animation-delay: calc(var(--i) * 60ms), calc(0.9s + var(--i) * 120ms); }
+.home-title span:nth-child(odd) { color: var(--orange); }
+@keyframes title-drop { from { transform: translateY(-140%) rotate(-12deg); opacity: 0; } }
+@keyframes title-bob { 50% { transform: translateY(-6px) rotate(2deg); } }
+.home-bottom { display: flex; flex-direction: column; align-items: center; gap: 14px; animation: home-rise 0.6s cubic-bezier(0.2, 1.5, 0.4, 1) 0.9s both; }
+.home-buttons { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; }
+@keyframes home-rise { from { transform: translateY(60px); opacity: 0; } }
+.home-tagline { margin: 0; max-width: 420px; text-align: center; font-size: 19px; font-weight: 700; line-height: 1.25; background: var(--white); border: var(--line); border-radius: 16px; padding: 8px 14px; box-shadow: 4px 4px 0 var(--black); }
+@media (prefers-reduced-motion: reduce) {
+  .home-title span, .home-bottom { animation: none; }
+}
 
 /* Baseline prompts: easy truthful questions shown while the baseline is recorded */
 .prompts .prompts-tag { font-size: 13px; font-weight: 700; letter-spacing: 0.08em; opacity: 0.7; }
