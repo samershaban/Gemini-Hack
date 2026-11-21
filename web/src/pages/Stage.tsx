@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { assetUrl, getApi, isMock, mockLabel } from '../api';
-import type { AnalyzeRes, CallRes, ClipKind, ClipRes, CreateRoundRes, Phase, RevealRes, Scoreboard, ServerMsg, Tell } from '../contract';
+import type { AnalyzeRes, CallRes, ClipKind, ClipRes, CreateRoundRes, Measures, Phase, RevealRes, Scoreboard, ServerMsg, Tell } from '../contract';
 import { Eye, type EyeHandle } from '../eye/Eye';
 import type { Mood } from '../eye/EyeScene';
 import { ClipRecorder, frameAt, say, useCamera } from '../lib/media';
@@ -368,7 +368,7 @@ function SlotButton({ label, slot, disabled, onClick }: { label: string; slot: S
       : slot.s === 'uploading'
         ? 'uploading…'
         : slot.s === 'done'
-          ? `${slot.res.measures.delay_ms}ms delay · ${slot.res.measures.gaze_breaks} gaze`
+          ? measureLine(slot.res.measures)
           : slot.s === 'failed'
             ? 'failed · tap to retry'
             : 'tap to record';
@@ -386,6 +386,12 @@ function SlotButton({ label, slot, disabled, onClick }: { label: string; slot: S
 function FrameLoader({ onMount }: { onMount: () => void }) {
   useEffect(onMount, []); // eslint-disable-line react-hooks/exhaustive-deps
   return <div className="frame-empty" />;
+}
+
+function measureLine(m: Measures) {
+  const delay = m.delay_ms == null ? 'no speech' : `${m.delay_ms}ms delay`;
+  const gaze = m.gaze_breaks == null ? 'no face' : `${m.gaze_breaks} gaze`;
+  return `${delay} · ${gaze}`;
 }
 
 const tellKey = (t: Tell) => `${t.statement}|${t.t_s}|${t.label}`;

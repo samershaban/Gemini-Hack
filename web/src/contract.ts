@@ -22,11 +22,12 @@ export interface ClipUpload {
   index: number;
   camera_id: string;
 }
+// Any measure is null when it couldn't be measured (no speech, no face found, transcription failed).
 export interface Measures {
-  delay_ms: number;
-  fillers: number;
-  blink_rate: number;
-  gaze_breaks: number;
+  delay_ms: number | null;
+  fillers: number | null;
+  blink_rate: number | null;
+  gaze_breaks: number | null;
 }
 export interface ClipRes {
   clip_id: string;
