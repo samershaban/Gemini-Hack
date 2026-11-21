@@ -1,9 +1,9 @@
 // "Ogle", the Eye. Original mascot, drawn entirely in code (no external assets).
-// Flat, high-contrast cartoon eyeball: white ball, orange lids, black outlines, floating brow.
+// Flat, high-contrast cartoon eyeball: white ball, orange lids, black outlines.
 //
 // Public API (all smoothed internally, safe to call every frame):
 //   setLook(x, y)     -1..1, where the Eye looks (face position, pointer...)
-//   setSuspicion(s)   0..1, dilates the pupil and lowers the brow
+//   setSuspicion(s)   0..1, dilates the pupil and narrows the lids
 //   setMood(m)        idle | thinking | squint | busted | dizzy | smug
 //   blink()
 
@@ -108,13 +108,13 @@ void main() {
 }`;
 
 // Lid angle a puts the lid's edge at screen height ~sin(a) * radius (iris edge is ~0.48).
-const LIDS: Record<Mood, { upper: number; lower: number; browY: number; browTilt: number }> = {
-  idle: { upper: 0.78, lower: 1.0, browY: 1.4, browTilt: 0 },
-  thinking: { upper: 0.62, lower: 0.92, browY: 1.32, browTilt: 0.12 },
-  squint: { upper: 0.36, lower: 0.5, browY: 1.1, browTilt: 0.22 },
-  busted: { upper: 0.3, lower: 0.42, browY: 1.02, browTilt: 0.3 },
-  dizzy: { upper: 0.95, lower: 1.15, browY: 1.55, browTilt: -0.15 },
-  smug: { upper: 0.42, lower: 0.75, browY: 1.38, browTilt: -0.2 },
+const LIDS: Record<Mood, { upper: number; lower: number }> = {
+  idle: { upper: 0.78, lower: 1.0 },
+  thinking: { upper: 0.62, lower: 0.92 },
+  squint: { upper: 0.36, lower: 0.5 },
+  busted: { upper: 0.3, lower: 0.42 },
+  dizzy: { upper: 0.95, lower: 1.15 },
+  smug: { upper: 0.42, lower: 0.75 },
 };
 
 const damp = (cur: number, target: number, rate: number, dt: number) =>
@@ -129,11 +129,10 @@ export class EyeScene implements EyeApi {
   private ballMat: ShaderMaterial;
   private upperLid: Mesh;
   private lowerLid: Mesh;
-  private brow: Mesh;
   private shadow: Mesh;
 
   private target = { x: 0, y: 0, suspicion: 0 };
-  private cur = { x: 0, y: 0, suspicion: 0, upper: 0.78, lower: 1.0, browY: 1.4, browTilt: 0, dizzy: 0, zoom: 0, spin: 0 };
+  private cur = { x: 0, y: 0, suspicion: 0, upper: 0.78, lower: 1.0, dizzy: 0, zoom: 0, spin: 0 };
   private mood: Mood = 'idle';
   private t = 0;
   private blinkUntil = 0;
@@ -208,12 +207,6 @@ export class EyeScene implements EyeApi {
     this.upperLid = mkLid('upperLid', false);
     this.lowerLid = mkLid('lowerLid', true);
 
-    // brow: a chunky floating bar that carries most of the expression
-    this.brow = MeshBuilder.CreateCapsule('brow', { radius: 0.13, height: 1.5, tessellation: 24 }, scene);
-    this.brow.material = flat('browMat', PALETTE.black);
-    this.brow.parent = this.rig;
-    this.brow.rotation.z = Math.PI / 2;
-    this.brow.position.set(0, 1.4, -0.7);
 
     scene.onBeforeRenderObservable.add(() => this.tick(this.engine.getDeltaTime() / 1000));
     this.engine.runRenderLoop(() => scene.render());
@@ -274,8 +267,6 @@ export class EyeScene implements EyeApi {
     const narrow = cur.suspicion * 0.18;
     cur.upper = damp(cur.upper, blinking ? 0.02 : lids.upper - narrow, blinking ? 40 : 12, dt);
     cur.lower = damp(cur.lower, blinking ? 0.02 : lids.lower - narrow * 0.6, blinking ? 40 : 12, dt);
-    cur.browY = damp(cur.browY, lids.browY - cur.suspicion * 0.12, 8, dt);
-    cur.browTilt = damp(cur.browTilt, lids.browTilt + cur.suspicion * 0.1, 8, dt);
     cur.dizzy = damp(cur.dizzy, mood === 'dizzy' ? 1 : 0, 5, dt);
     cur.zoom = damp(cur.zoom, mood === 'busted' ? 1 : mood === 'squint' ? 0.35 : 0, mood === 'busted' ? 9 : 3, dt);
 
@@ -284,10 +275,6 @@ export class EyeScene implements EyeApi {
     this.upperLid.rotation.x = cur.upper;
     this.lowerLid.rotation.x = cur.lower;
 
-    // brow follows the gaze a touch, tilts with mood
-    this.brow.position.y = cur.browY + Math.sin(this.t * 2.2) * 0.02;
-    this.brow.position.x = cur.x * 0.12;
-    this.brow.rotation.z = Math.PI / 2 + cur.browTilt + (mood === 'dizzy' ? Math.sin(this.t * 5) * 0.25 : 0);
 
     // body: idle bob, dizzy wobble, busted shake
     const bob = Math.sin(this.t * 1.8) * 0.08 * (1 - cur.zoom);

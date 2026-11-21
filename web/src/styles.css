@@ -140,3 +140,8 @@ b, .brand, .btn, .slot-label, .stamp, .busted-big, .reveal-big, .vote, .phase, .
 .roster-role { flex: none; font-size: 11px; letter-spacing: 0.08em; background: var(--orange); border: 2px solid var(--black); border-radius: 8px; padding: 0 6px; }
 .roster-pts { margin-left: auto; flex: none; font-size: 15px; background: var(--black); color: var(--yellow); border-radius: 8px; padding: 0 8px; }
 @keyframes chip-pop-in { from { transform: scale(0.3); opacity: 0; } }
+
+/* ---------- home ---------- */
+.home { gap: 12px; }
+.home-eye { position: relative; width: min(52vh, 86vw); aspect-ratio: 1; margin: -12px 0 -4px; }
+.home-tagline { margin: 0 0 6px; max-width: 340px; text-align: center; font-size: 19px; font-weight: 700; line-height: 1.25; }

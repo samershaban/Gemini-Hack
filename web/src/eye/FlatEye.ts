@@ -7,13 +7,13 @@ const NS = 'http://www.w3.org/2000/svg';
 const R = 66; // eyeball radius in viewBox units
 
 // Lid edge heights as a fraction of R (matching the 3D lid angles: sin(angle)).
-const LIDS: Record<Mood, { upper: number; lower: number; browY: number; browTilt: number }> = {
-  idle: { upper: 0.7, lower: 0.84, browY: 1.4, browTilt: 0 },
-  thinking: { upper: 0.58, lower: 0.8, browY: 1.32, browTilt: 0.12 },
-  squint: { upper: 0.35, lower: 0.48, browY: 1.1, browTilt: 0.22 },
-  busted: { upper: 0.3, lower: 0.41, browY: 1.02, browTilt: 0.3 },
-  dizzy: { upper: 0.81, lower: 0.91, browY: 1.55, browTilt: -0.15 },
-  smug: { upper: 0.41, lower: 0.68, browY: 1.38, browTilt: -0.2 },
+const LIDS: Record<Mood, { upper: number; lower: number }> = {
+  idle: { upper: 0.7, lower: 0.84 },
+  thinking: { upper: 0.58, lower: 0.8 },
+  squint: { upper: 0.35, lower: 0.48 },
+  busted: { upper: 0.3, lower: 0.41 },
+  dizzy: { upper: 0.81, lower: 0.91 },
+  smug: { upper: 0.41, lower: 0.68 },
 };
 
 const damp = (cur: number, target: number, rate: number, dt: number) =>
@@ -43,13 +43,12 @@ export class FlatEye implements EyeApi {
   private upperRim: SVGPathElement;
   private lowerLid: SVGPathElement;
   private lowerRim: SVGPathElement;
-  private brow: SVGRectElement;
   private shadow: SVGEllipseElement;
   private raf = 0;
   private last = performance.now();
 
   private target = { x: 0, y: 0, suspicion: 0 };
-  private cur = { x: 0, y: 0, suspicion: 0, upper: 0.7, lower: 0.84, browY: 1.4, browTilt: 0, dizzy: 0, zoom: 0, spin: 0 };
+  private cur = { x: 0, y: 0, suspicion: 0, upper: 0.7, lower: 0.84, dizzy: 0, zoom: 0, spin: 0 };
   private mood: Mood = 'idle';
   private t = 0;
   private blinkUntil = 0;
@@ -93,7 +92,6 @@ export class FlatEye implements EyeApi {
     [this.upperLid, this.upperRim] = lid(false);
     [this.lowerLid, this.lowerRim] = lid(true);
 
-    this.brow = el('rect', { x: -50, y: -9, width: 100, height: 18, rx: 9, fill: PALETTE.black }, this.body);
 
     this.tick(0); // draw the first frame now: rAF doesn't run in background tabs
     const loop = (now: number) => {
@@ -150,8 +148,6 @@ export class FlatEye implements EyeApi {
     const narrow = cur.suspicion * 0.15;
     cur.upper = damp(cur.upper, blinking ? 0 : lids.upper - narrow, blinking ? 40 : 12, dt);
     cur.lower = damp(cur.lower, blinking ? 0 : lids.lower - narrow * 0.6, blinking ? 40 : 12, dt);
-    cur.browY = damp(cur.browY, lids.browY - cur.suspicion * 0.12, 8, dt);
-    cur.browTilt = damp(cur.browTilt, lids.browTilt + cur.suspicion * 0.1, 8, dt);
     cur.dizzy = damp(cur.dizzy, mood === 'dizzy' ? 1 : 0, 5, dt);
     cur.zoom = damp(cur.zoom, mood === 'busted' ? 1 : mood === 'squint' ? 0.35 : 0, mood === 'busted' ? 9 : 3, dt);
     cur.spin = mood === 'dizzy' ? cur.spin + dt * 3 : damp(cur.spin, Math.round(cur.spin / (2 * Math.PI)) * 2 * Math.PI, 4, dt);
@@ -166,8 +162,6 @@ export class FlatEye implements EyeApi {
     this.lowerLid.setAttribute('d', lidPath(cur.lower));
     this.lowerRim.setAttribute('d', rimPath(cur.lower));
 
-    const browRot = (cur.browTilt + (mood === 'dizzy' ? Math.sin(this.t * 5) * 0.25 : 0)) * (180 / Math.PI);
-    this.brow.setAttribute('transform', `translate(${cur.x * 8} ${-cur.browY * R + Math.sin(this.t * 2.2) * 1.3}) rotate(${-browRot})`);
 
     const bob = Math.sin(this.t * 1.8) * 5 * (1 - cur.zoom);
     const sh = this.shake * 8;

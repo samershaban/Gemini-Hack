@@ -3,7 +3,8 @@ import '@fontsource/fredoka/700.css';
 import './styles.css';
 import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createBrowserRouter, Link, Navigate, RouterProvider } from 'react-router-dom';
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom';
+import Home from './pages/Home';
 
 // Stage pulls in Babylon; phones on /play never download it.
 const Stage = lazy(() => import('./pages/Stage'));
@@ -15,16 +16,6 @@ const router = createBrowserRouter([
   { path: '/play', element: <Play /> },
   { path: '*', element: <Navigate to="/" replace /> },
 ]);
-
-function Home() {
-  return (
-    <div className="play">
-      <div className="brand">POKER FACE</div>
-      <Link className="btn big" to="/stage">New Game</Link>
-      <Link className="btn ghost" to="/play">Join Game</Link>
-    </div>
-  );
-}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
