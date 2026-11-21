@@ -81,8 +81,9 @@ def run_model_conditions_for_round(round_info: dict, cache: dict) -> dict:
 
 def score_round(round_info: dict, model_results: dict) -> dict:
     """One row per round: which statement each condition picked, and whether it was right."""
-    lie_statement = round_info["lie_index"] + 1
     result = round_info["result"]
+    # The saved result holds the real lie (the player may have confirmed a different one).
+    lie_statement = result.get("lie_statement", round_info["lie_index"] + 1)
     random_generator = random.Random(round_info["round_id"])
 
     picks = {"random": {"statement": random_generator.choice([1, 2, 3]), "confidence": 1 / 3}}
@@ -107,6 +108,7 @@ def score_round(round_info: dict, model_results: dict) -> dict:
     return {
         "round_id": round_info["round_id"],
         "lie_statement": lie_statement,
+        "truth_source": result.get("truth_source", "secret"),
         "tried_to_trick": bool(round_info.get("tried_to_trick")),
         "tags": json.loads(round_info["tags_json"]) if round_info.get("tags_json") else [],
         "picks": picks,

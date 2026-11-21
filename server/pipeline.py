@@ -17,22 +17,26 @@ from server.decisions import (
     build_video_block_inline,
     make_decisions_client,
 )
-from server.follow_up import ask_neon_for_follow_up
+from server.follow_up import read_lie_probabilities, write_follow_up_question
 from server.media import save_still_frame
 from server.paths import get_round_folder
 
 logger = logging.getLogger(__name__)
 
-CONFIDENT_ENOUGH_TO_CALL = 0.75
+CONFIDENT_ENOUGH_TO_CALL = 0.70  # below this, ask another follow-up question
+MAX_FOLLOW_UPS = 3  # so a round never runs forever
 TELL_PROBABILITY_TO_SHOW = 0.6
-MAX_FOLLOW_UPS = 1
-NEON_TIMEOUT_SECONDS = 12  # after this, the host asks the template question instead
+NEON_TIMEOUT_SECONDS = 12  # after this, skip Neon (template question / Decision 1 alone)
+NEON_WEIGHT = 0.25  # Neon's share of the blended lie probabilities, on rounds with follow-ups
 
 # Numbers we compare against the player's own baseline ("difference from baseline", PRD v2).
+# delay_ms is left out: it starts when the operator taps record, so it mostly measures the operator.
 MEASURE_NAMES_TO_COMPARE = [
-    "delay_ms", "fillers", "blink_rate", "gaze_breaks",
+    "fillers", "blink_rate", "gaze_breaks",
     "self_corrections", "long_pauses", "words_per_second",
 ]
+ALL_STATEMENTS_IN_ORDER = [1, 2, 3]
+ALL_STATEMENTS_REVERSED = [3, 2, 1]
 
 # Per-statement yes/no tells. "{label}" is replaced by "STATEMENT 1" and so on.
 PER_STATEMENT_TELLS = {
@@ -113,19 +117,20 @@ def describe_measured_differences(statement_number: int, differences: dict) -> s
 def build_decision_input(
     round_clips: dict,
     differences_by_statement: dict,
-    pressed_statement: int | None = None,
+    statement_order: list[int] = ALL_STATEMENTS_IN_ORDER,
 ) -> list[dict]:
-    """pressed_statement: which statement the follow-up question was about (from the last analysis)."""
+    """Labeled clips for Decision 1. statement_order changes only the order of the blocks
+    (labels stay the same), which lets us cancel out any bias toward the first or last one."""
     input_blocks = []
     for baseline_number, baseline_clip in enumerate(round_clips["baselines"], start=1):
         input_blocks.append(build_text_block(f"BASELINE {baseline_number} (the player telling the truth, to learn how they normally act):"))
         input_blocks.append(build_video_block_for_clip(baseline_clip))
-    for statement_number, statement_clip in enumerate(round_clips["statements"], start=1):
+    for statement_number in statement_order:
         input_blocks.append(build_text_block(f"STATEMENT {statement_number}:"))
-        input_blocks.append(build_video_block_for_clip(statement_clip))
-    for followup_clip in round_clips["followups"][-MAX_FOLLOW_UPS:]:
-        # The stage always sends the follow-up clip with index 1, so the statement it was
-        # about comes from the follow-up question we asked, not from the clip's index.
+        input_blocks.append(build_video_block_for_clip(round_clips["statements"][statement_number - 1]))
+    for followup_clip in round_clips["followups"]:
+        # /clips saved which statement each follow-up question was about.
+        pressed_statement = followup_clip.get("pressed_statement")
         if pressed_statement is not None:
             followup_label = f"FOLLOW-UP answer, after being pressed about STATEMENT {pressed_statement}:"
         else:
@@ -134,11 +139,11 @@ def build_decision_input(
         input_blocks.append(build_video_block_for_clip(followup_clip))
 
     measured_lines = [
-        describe_measured_differences(statement_number, differences)
-        for statement_number, differences in differences_by_statement.items()
+        describe_measured_differences(statement_number, differences_by_statement[statement_number])
+        for statement_number in statement_order
     ]
     input_blocks.append(build_text_block(
-        "Measured by code (delay in ms, counts per clip, blink rate per minute):\n" + "\n".join(measured_lines)
+        "Measured by code (counts per clip, blink rate per minute, words per second):\n" + "\n".join(measured_lines)
     ))
     return input_blocks
 
@@ -185,8 +190,6 @@ def guess_lie_from_measures_only(differences_by_statement: dict) -> list[float]:
     for statement_number in [1, 2, 3]:
         differences = differences_by_statement[statement_number]
         points = 1.0
-        if differences["delay_ms"] is not None:
-            points += max(differences["delay_ms"], 0) / 1000
         for count_name in ["fillers", "gaze_breaks", "self_corrections", "long_pauses"]:
             if differences[count_name] is not None:
                 points += max(differences[count_name], 0)
@@ -209,43 +212,113 @@ def collect_tells(round_clips: dict, decision_answers: dict | None) -> list[dict
     return tells
 
 
+def run_with_timeout(timeout_seconds: float, function, *arguments):
+    """Run function(*arguments) in a thread; raise TimeoutError if it takes too long."""
+    worker_pool = ThreadPoolExecutor(max_workers=1)
+    future = worker_pool.submit(function, *arguments)
+    try:
+        return future.result(timeout=timeout_seconds)
+    except FutureTimeoutError:
+        raise TimeoutError(f"{function.__name__} took over {timeout_seconds} s")
+    finally:
+        worker_pool.shutdown(wait=False)
+
+
+def read_choice_probabilities(decision_answers) -> list[float]:
+    """Decision 1's probability for statements 1-3, rescaled to add up to 1 (without "other")."""
+    lie_choice = decision_answers["which_statement_is_the_lie"]
+    raw_probabilities = [lie_choice.probabilities.get(f"statement_{number}", 0.0) for number in ALL_STATEMENTS_IN_ORDER]
+    probability_total = sum(raw_probabilities) or 1.0
+    return [probability / probability_total for probability in raw_probabilities]
+
+
+def ask_decision_in_order(round_clips: dict, differences_by_statement: dict, statement_order: list[int], questions: dict):
+    return ask_decision_questions(
+        make_decisions_client(),
+        build_decision_input(round_clips, differences_by_statement, statement_order),
+        questions,
+    ).answers
+
+
 def analyze_round(round_id: str) -> dict:
-    """Score the round. Returns the /analyze contract shape and saves the full analysis."""
+    """Score the round. Returns the /analyze contract shape and saves the full analysis.
+
+    Three calls run at the same time:
+    - Decision 1 with every question, statements in order 1-2-3
+    - Decision 1 with only the lie question, statements in order 3-2-1 (cancels order bias)
+    - Neon's second opinion, only when the round already has follow-up answers
+    """
     round_clips = load_round_clips(round_id)
+    prompts = db.get_round(round_id)["prompts"]
     baseline_averages = average_baseline_measures(round_clips["baselines"])
     differences_by_statement = {
         statement_number: compute_differences_from_baseline(statement_clip, baseline_averages)
         for statement_number, statement_clip in enumerate(round_clips["statements"], start=1)
     }
+    all_questions = build_decision_questions()
+    lie_question_only = {"which_statement_is_the_lie": all_questions["which_statement_is_the_lie"]}
+    ask_neon = len(round_clips["followups"]) > 0
 
-    # If we already asked a follow-up question, remember which statement it was about.
-    previous_analysis = db.get_round(round_id)["analysis"]
-    pressed_statement = None
-    if previous_analysis and previous_analysis.get("follow_up"):
-        pressed_statement = previous_analysis["follow_up"]["statement"]
+    # Not a `with` block: leaving one waits for every call, and a slow Neon call would hold up the round.
+    worker_pool = ThreadPoolExecutor(max_workers=3)
+    in_order_future = worker_pool.submit(
+        ask_decision_in_order, round_clips, differences_by_statement, ALL_STATEMENTS_IN_ORDER, all_questions)
+    reversed_future = worker_pool.submit(
+        ask_decision_in_order, round_clips, differences_by_statement, ALL_STATEMENTS_REVERSED, lie_question_only)
+    neon_future = worker_pool.submit(read_lie_probabilities, round_clips, prompts) if ask_neon else None
 
     decision_answers = None
-    source = "decision_1"
+    decision_probabilities_by_order = {}
     try:
-        decision_result = ask_decision_questions(
-            make_decisions_client(),
-            build_decision_input(round_clips, differences_by_statement, pressed_statement),
-            build_decision_questions(),
-        )
-        decision_answers = decision_result.answers
-        lie_choice = decision_answers["which_statement_is_the_lie"]
-        raw_probabilities = [lie_choice.probabilities.get(f"statement_{number}", 0.0) for number in [1, 2, 3]]
-        probability_total = sum(raw_probabilities) or 1.0
-        lie_probs = [round(probability / probability_total, 3) for probability in raw_probabilities]
+        decision_answers = in_order_future.result()
+        decision_probabilities_by_order["1-2-3"] = read_choice_probabilities(decision_answers)
     except Exception as decision_error:
-        logger.warning("Decision 1 failed for round %s, using measures only: %s", round_id, decision_error)
-        lie_probs = guess_lie_from_measures_only(differences_by_statement)
+        logger.warning("Decision 1 (in order) failed for round %s: %s", round_id, decision_error)
+    try:
+        decision_probabilities_by_order["3-2-1"] = read_choice_probabilities(reversed_future.result())
+    except Exception as decision_error:
+        logger.warning("Decision 1 (reversed) failed for round %s: %s", round_id, decision_error)
+
+    if decision_probabilities_by_order:
+        # Average the two orders so neither the first nor the last statement gets an edge.
+        decision_probabilities = [
+            sum(probabilities[position] for probabilities in decision_probabilities_by_order.values()) / len(decision_probabilities_by_order)
+            for position in range(3)
+        ]
+        source = "decision_1"
+    else:
+        decision_probabilities = guess_lie_from_measures_only(differences_by_statement)
         source = "measures_fallback"
 
+    # If Decision 1 alone isn't confident, start writing the follow-up question now, at the
+    # same time as Neon's second opinion, instead of one after the other.
+    can_ask_more = len(round_clips["followups"]) < MAX_FOLLOW_UPS
+    question_future = None
+    if can_ask_more and max(decision_probabilities) < CONFIDENT_ENOUGH_TO_CALL:
+        question_future = worker_pool.submit(choose_follow_up, round_id, round_clips, decision_probabilities, prompts)
+
+    neon_probabilities = None
+    if neon_future is not None:
+        try:
+            neon_probabilities = neon_future.result(timeout=NEON_TIMEOUT_SECONDS)
+        except FutureTimeoutError:
+            logger.warning("Neon second opinion took over %s s for round %s, skipping it", NEON_TIMEOUT_SECONDS, round_id)
+        except Exception as neon_error:
+            logger.warning("Neon second opinion failed for round %s: %s", round_id, neon_error)
+
+    if neon_probabilities is not None and source == "decision_1":
+        blended_probabilities = [
+            (1 - NEON_WEIGHT) * decision_probability + NEON_WEIGHT * neon_probability
+            for decision_probability, neon_probability in zip(decision_probabilities, neon_probabilities)
+        ]
+        source = "decision_1_plus_neon"
+    else:
+        blended_probabilities = decision_probabilities
+
+    lie_probs = [round(probability, 3) for probability in blended_probabilities]
     confidence = max(lie_probs)
     top_statement = lie_probs.index(confidence) + 1
-    already_followed_up = len(round_clips["followups"]) >= MAX_FOLLOW_UPS
-    escalate = confidence < CONFIDENT_ENOUGH_TO_CALL and not already_followed_up
+    escalate = confidence < CONFIDENT_ENOUGH_TO_CALL and can_ask_more
 
     analysis = {
         "lie_probs": lie_probs,
@@ -255,14 +328,23 @@ def analyze_round(round_id: str) -> dict:
     }
     follow_up_detail = None
     if escalate:
-        follow_up_detail = choose_follow_up(round_id, round_clips, lie_probs)
+        if question_future is not None:
+            follow_up_detail = question_future.result()  # choose_follow_up has its own timeout and template
+        else:
+            follow_up_detail = choose_follow_up(round_id, round_clips, lie_probs, prompts)
         analysis["follow_up"] = {"statement": follow_up_detail["statement"], "question": follow_up_detail["question"]}
 
     # Save more than we return, for the eval and the call.
     saved_analysis = dict(analysis)
     saved_analysis["follow_up_detail"] = follow_up_detail
+    saved_analysis["follow_ups_so_far"] = len(round_clips["followups"])
     saved_analysis["source"] = source
     saved_analysis["top_statement"] = top_statement
+    saved_analysis["decision_probabilities_by_order"] = {
+        order_name: [round(probability, 3) for probability in probabilities]
+        for order_name, probabilities in decision_probabilities_by_order.items()
+    }
+    saved_analysis["neon_probabilities"] = [round(probability, 3) for probability in neon_probabilities] if neon_probabilities else None
     # JSON keys are always text, so save statement numbers as "1", "2", "3".
     saved_analysis["differences_by_statement"] = {
         str(statement_number): differences for statement_number, differences in differences_by_statement.items()
@@ -278,37 +360,50 @@ def analyze_round(round_id: str) -> dict:
             if answer.type == "noul"
         }
     db.save_round_json(round_id, "analysis_json", saved_analysis)
+    worker_pool.shutdown(wait=False)
     return analysis
 
 
-def choose_follow_up(round_id: str, round_clips: dict, lie_probs: list[float]) -> dict:
-    """Pick the statement to press on and one question about it.
+def choose_statement_to_press(lie_probs: list[float], followup_clips: list[dict]) -> int:
+    """Press on the statements we're unsure about, taking turns between the top two.
 
-    Neon watches the two most suspicious statements. If it fails or is too slow,
-    we ask a template question about the most suspicious statement.
+    Among the two most suspicious statements, pick the one asked about fewer times;
+    on a tie, pick the more suspicious one.
     """
-    round_info = db.get_round(round_id)
-    prompts = round_info["prompts"]
-    statements_by_suspicion = sorted([1, 2, 3], key=lambda number: lie_probs[number - 1], reverse=True)
-    two_closest_statements = statements_by_suspicion[:2]
-    clips_to_send = {number: round_clips["statements"][number - 1] for number in sorted(two_closest_statements)}
+    statements_by_suspicion = sorted(ALL_STATEMENTS_IN_ORDER, key=lambda number: lie_probs[number - 1], reverse=True)
+    top_two_statements = statements_by_suspicion[:2]
+    times_pressed = {
+        statement_number: sum(1 for clip in followup_clips if clip.get("pressed_statement") == statement_number)
+        for statement_number in top_two_statements
+    }
+    return min(top_two_statements, key=lambda number: (times_pressed[number], -lie_probs[number - 1]))
 
-    worker_pool = ThreadPoolExecutor(max_workers=1)
-    neon_future = worker_pool.submit(ask_neon_for_follow_up, clips_to_send, prompts)
+
+def choose_follow_up(round_id: str, round_clips: dict, lie_probs: list[float], prompts: list[str]) -> dict:
+    """The server picks the statement; Neon writes the question (template if it fails or is slow)."""
+    statement_number = choose_statement_to_press(lie_probs, round_clips["followups"])
+    statement_clip = round_clips["statements"][statement_number - 1]
+    earlier_answer_clips = [
+        clip for clip in round_clips["followups"] if clip.get("pressed_statement") == statement_number
+    ]
+    prompt_text = prompts[statement_number - 1]
     try:
-        return neon_future.result(timeout=NEON_TIMEOUT_SECONDS)
-    except FutureTimeoutError:
-        logger.warning("Neon follow-up took over %s s for round %s, using the template", NEON_TIMEOUT_SECONDS, round_id)
+        return run_with_timeout(
+            NEON_TIMEOUT_SECONDS, write_follow_up_question,
+            statement_number, statement_clip, earlier_answer_clips, prompt_text,
+        )
     except Exception as neon_error:
-        logger.warning("Neon follow-up failed for round %s, using the template: %s", round_id, neon_error)
-    finally:
-        worker_pool.shutdown(wait=False)
+        logger.warning("Neon follow-up question failed for round %s, using the template: %s", round_id, neon_error)
 
-    top_statement = statements_by_suspicion[0]
-    prompt_text = prompts[top_statement - 1]
+    template_questions = [
+        "What exactly happened, and when?",
+        "Who else was there, and what did they say?",
+        "Where were you, and what did it look like?",
+    ]
+    question_ending = template_questions[min(len(earlier_answer_clips), len(template_questions) - 1)]
     return {
-        "statement": top_statement,
-        "question": f"Tell me more about statement {top_statement} ({prompt_text.lower()}). What exactly happened, and when?",
+        "statement": statement_number,
+        "question": f"Tell me more about statement {statement_number} ({prompt_text.lower()}). {question_ending}",
         "t_s": None,
         "cue": None,
     }

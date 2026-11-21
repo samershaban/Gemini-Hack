@@ -138,3 +138,11 @@ def read_video_frames_as_rgb(video_path: Path, frames_per_second: int, frame_wid
 def save_still_frame(video_path: Path, output_path: Path, at_seconds: float) -> None:
     """Save one JPEG frame from the video at the given time (for the BUSTED screen)."""
     run_ffmpeg(["-ss", str(at_seconds), "-i", str(video_path), "-frames:v", "1", "-q:v", "3", str(output_path)])
+
+
+def get_video_duration_seconds(video_path: Path) -> float:
+    probe_command = [
+        "ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(video_path),
+    ]
+    probe_output = subprocess.run(probe_command, capture_output=True, text=True, check=True).stdout
+    return float(probe_output.strip())
