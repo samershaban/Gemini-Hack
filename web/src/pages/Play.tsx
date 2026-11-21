@@ -19,7 +19,10 @@ export default function Play() {
       setPhase(m.phase);
       if (m.phase === 'baseline') setVote(null); // new round
     }
-    if (m.type === 'scoreboard') setScore(m.scoreboard);
+    if (m.type === 'scoreboard') {
+      const { type: _type, ...board } = m;
+      setScore(board);
+    }
   });
 
   const join = (role: Role) => {

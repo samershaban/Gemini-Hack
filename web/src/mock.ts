@@ -89,8 +89,11 @@ export const mockApi: Api = {
   async createRound({ room }): Promise<CreateRoundRes> {
     await sleep(jitter(180));
     const round_id = `r${++seq}-${Date.now().toString(36)}`;
+    const prompts = PROMPTS[seq % PROMPTS.length];
     adoptRound(round_id, room);
-    return { round_id, prompts: PROMPTS[seq % PROMPTS.length] };
+    // the real hub sends this only to role "player"; mock Play pages filter by role themselves
+    broadcast(room, { type: 'secret', round_id, lie_index: 1, statement: 2, prompt: prompts[1] });
+    return { round_id, prompts };
   },
 
   async postClip(roundId, clip): Promise<ClipRes> {
@@ -179,12 +182,12 @@ export const mockApi: Api = {
     await sleep(jitter(300));
     const correct = r.lieIndex === 1; // mock call always says statement 2
     const votes = [...r.votes.values()];
-    const room_accuracy = votes.length ? votes.filter((v) => v - 1 === r.lieIndex).length / votes.length : 0.4;
-    if (correct) scoreboard.gemini += room_accuracy < 0.5 ? 2 : 1;
-    if (room_accuracy >= 0.5) scoreboard.room += 1;
+    const room_accuracy = votes.length ? votes.filter((v) => v - 1 === r.lieIndex).length / votes.length : null;
+    if (correct) scoreboard.gemini += room_accuracy != null && room_accuracy < 0.5 ? 2 : 1;
+    if (room_accuracy != null && room_accuracy >= 0.5) scoreboard.room += 1;
     void tried_to_trick;
     broadcast(r.room, { type: 'phase', phase: 'reveal' });
-    broadcast(r.room, { type: 'scoreboard', scoreboard: { ...scoreboard } });
+    broadcast(r.room, { type: 'scoreboard', ...scoreboard });
     return { correct, lie_index: r.lieIndex, room_accuracy, scoreboard: { ...scoreboard } };
   },
 

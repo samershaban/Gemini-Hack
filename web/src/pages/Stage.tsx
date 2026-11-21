@@ -84,9 +84,11 @@ export default function Stage() {
       case 'tell':
         addTells([{ statement: m.statement, t_s: m.t_s, label: m.label }]);
         break;
-      case 'scoreboard':
-        setScore(m.scoreboard);
+      case 'scoreboard': {
+        const { type: _type, ...board } = m;
+        setScore(board);
         break;
+      }
     }
   }, []);
   useRoom(room, onMsg);
@@ -208,7 +210,7 @@ export default function Stage() {
     const stmt = slots[`statement-${verdict.statement}`];
     const src = followUp?.statement === verdict.statement && followup && 'blob' in followup ? followup : stmt;
     const blob = src && 'blob' in src ? src.blob : null;
-    setFrame(blob ? await frameAt(blob, verdict.t_s) : null);
+    setFrame(blob ? await frameAt(blob, verdict.t_s ?? 1) : null); // no timestamp: an early frame
   };
 
   const doReveal = () =>
@@ -226,7 +228,8 @@ export default function Stage() {
   const statementsDone = SLOTS.filter((s) => s.kind === 'statement').every((s) => slotState(s.key).s === 'done');
   const followupDone = slotState(FOLLOWUP.key).s === 'done';
   const needsFollowup = !!followUp && !followupDone;
-  const canCall = !!analysis && (!analysis.escalate || followupDone) && !verdict;
+  // also callable if the server escalated without a follow-up question, so a round never gets stuck
+  const canCall = !!analysis && (!analysis.escalate || followupDone || !followUp) && !verdict;
   const reAnalyze = !!analysis?.escalate && followupDone;
   const visibleTells = tells.slice(-8);
 
@@ -284,9 +287,9 @@ export default function Stage() {
             <div className="busted-big">
               STATEMENT {verdict.statement} <span>{Math.round(verdict.confidence * 100)}% sure</span>
             </div>
-            <div>
-              {fmtT(verdict.t_s)} · {verdict.cue}
-            </div>
+            {(verdict.t_s != null || verdict.cue) && (
+              <div>{[fmtT(verdict.t_s), verdict.cue].filter(Boolean).join(' · ')}</div>
+            )}
             <div className="busted-why">{verdict.line}</div>
           </div>
         </div>
@@ -296,7 +299,8 @@ export default function Stage() {
         <div className={`reveal ${reveal.correct ? 'win' : 'lose'}`}>
           <div className="reveal-big">{reveal.correct ? 'THE EYE WINS' : 'YOU FOOLED THE EYE'}</div>
           <div>
-            The lie was statement {reveal.lie_index + 1} · the room got it {Math.round(reveal.room_accuracy * 100)}%
+            The lie was statement {reveal.lie_index + 1} ·{' '}
+            {reveal.room_accuracy == null ? 'nobody voted' : `the room got it ${Math.round(reveal.room_accuracy * 100)}%`}
           </div>
         </div>
       )}

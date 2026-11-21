@@ -1,9 +1,9 @@
 // Mirror of the Part A <-> Part B contract in the PRD ("The contract").
 // Change only by telling Belal.
 //
-// Open questions for Part A (assumptions used here):
-//  - `statement` in tells / call / follow_up / vote is 1-based (1..3), matching "Statement 2" in `line`.
-//  - `lie_index` in /reveal is 0-based, matching `lie_probs` indexing.
+// Numbering (confirmed against the brain branch):
+//  - `statement` everywhere (tells, call, follow_up, vote, secret) is 1, 2 or 3.
+//  - `lie_probs` is in statement order; `lie_index` in /reveal is 0, 1 or 2.
 //  - clip `index` is 1-based within its kind (baseline 1-2, statement 1-3, followup 1).
 
 export type ClipKind = 'baseline' | 'statement' | 'followup' | 'angle';
@@ -37,7 +37,7 @@ export interface ClipRes {
 
 export interface Tell {
   statement: number;
-  t_s: number;
+  t_s: number | null;
   label: string;
 }
 export interface AnalyzeRes {
@@ -51,10 +51,10 @@ export interface AnalyzeRes {
 export interface CallRes {
   statement: number;
   confidence: number;
-  t_s: number;
-  cue: string;
+  t_s: number | null; // null when no timed tell was found
+  cue: string | null;
   line: string;
-  frame_url: string;
+  frame_url: string | null; // null when the server couldn't extract a still
 }
 
 export interface RevealReq {
@@ -63,11 +63,12 @@ export interface RevealReq {
 export interface Scoreboard {
   gemini: number;
   room: number;
+  players?: { name: string; points: number }[];
 }
 export interface RevealRes {
   correct: boolean;
   lie_index: number;
-  room_accuracy: number;
+  room_accuracy: number | null; // null when nobody voted
   scoreboard: Scoreboard;
 }
 
@@ -77,12 +78,16 @@ export type Phase = 'lobby' | 'baseline' | 'statements' | 'thinking' | 'followup
 export type ServerMsg =
   | { type: 'phase'; phase: Phase }
   | { type: 'suspicion'; value: number }
-  | { type: 'tell'; statement: number; t_s: number; label: string }
-  | { type: 'scoreboard'; scoreboard: Scoreboard }
-  | { type: 'secret'; statement: number };
+  | { type: 'tell'; statement: number; t_s: number | null; label: string }
+  | ({ type: 'scoreboard' } & Scoreboard) // fields are flattened into the message
+  | { type: 'secret'; round_id: string; lie_index: number; statement: number; prompt: string } // player's phone only
+  | { type: 'vote_locked'; statement: number }
+  | { type: 'error'; detail: string };
+
+export type Role = 'eye' | 'voter' | 'player';
 
 export type ClientMsg =
-  | { type: 'join'; name: string; role: 'eye' | 'voter' }
+  | { type: 'join'; name: string; role: Role }
   | { type: 'vote'; statement: number };
 
 export interface Api {

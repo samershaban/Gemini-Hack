@@ -30,8 +30,9 @@ export function newRoomCode() {
   return Array.from({ length: 4 }, () => ALPHA[Math.floor(Math.random() * ALPHA.length)]).join('');
 }
 
-/** "0:03.4" */
-export function fmtT(t: number) {
+/** "0:03.4", or "" when the time is unknown */
+export function fmtT(t: number | null) {
+  if (t == null) return '';
   const m = Math.floor(t / 60);
   const s = (t - m * 60).toFixed(1).padStart(4, '0');
   return `${m}:${s}`;
