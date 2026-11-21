@@ -5,6 +5,8 @@ statement order, and `lie_index` (in /reveal) is 0, 1, or 2, the position in tha
 """
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 
 from server import db
@@ -15,6 +17,7 @@ from server.decisions import (
     build_video_block_inline,
     make_decisions_client,
 )
+from server.follow_up import ask_neon_for_follow_up
 from server.media import save_still_frame
 from server.paths import get_round_folder
 
@@ -23,6 +26,7 @@ logger = logging.getLogger(__name__)
 CONFIDENT_ENOUGH_TO_CALL = 0.75
 TELL_PROBABILITY_TO_SHOW = 0.6
 MAX_FOLLOW_UPS = 1
+NEON_TIMEOUT_SECONDS = 12  # after this, the host asks the template question instead
 
 # Numbers we compare against the player's own baseline ("difference from baseline", PRD v2).
 MEASURE_NAMES_TO_COMPARE = [
@@ -233,11 +237,14 @@ def analyze_round(round_id: str) -> dict:
         "tells": collect_tells(round_clips, decision_answers),
         "escalate": escalate,
     }
+    follow_up_detail = None
     if escalate:
-        analysis["follow_up"] = choose_follow_up(round_id, round_clips, lie_probs)
+        follow_up_detail = choose_follow_up(round_id, round_clips, lie_probs)
+        analysis["follow_up"] = {"statement": follow_up_detail["statement"], "question": follow_up_detail["question"]}
 
     # Save more than we return, for the eval and the call.
     saved_analysis = dict(analysis)
+    saved_analysis["follow_up_detail"] = follow_up_detail
     saved_analysis["source"] = source
     saved_analysis["top_statement"] = top_statement
     # JSON keys are always text, so save statement numbers as "1", "2", "3".
@@ -261,15 +268,33 @@ def analyze_round(round_id: str) -> dict:
 def choose_follow_up(round_id: str, round_clips: dict, lie_probs: list[float]) -> dict:
     """Pick the statement to press on and one question about it.
 
-    For now this is a template on the most suspicious statement. Step 3 adds Neon
-    (agentic video) and keeps this template as its fallback.
+    Neon watches the two most suspicious statements. If it fails or is too slow,
+    we ask a template question about the most suspicious statement.
     """
-    top_statement = lie_probs.index(max(lie_probs)) + 1
     round_info = db.get_round(round_id)
-    prompt_text = round_info["prompts"][top_statement - 1]
+    prompts = round_info["prompts"]
+    statements_by_suspicion = sorted([1, 2, 3], key=lambda number: lie_probs[number - 1], reverse=True)
+    two_closest_statements = statements_by_suspicion[:2]
+    clips_to_send = {number: round_clips["statements"][number - 1] for number in sorted(two_closest_statements)}
+
+    worker_pool = ThreadPoolExecutor(max_workers=1)
+    neon_future = worker_pool.submit(ask_neon_for_follow_up, clips_to_send, prompts)
+    try:
+        return neon_future.result(timeout=NEON_TIMEOUT_SECONDS)
+    except FutureTimeoutError:
+        logger.warning("Neon follow-up took over %s s for round %s, using the template", NEON_TIMEOUT_SECONDS, round_id)
+    except Exception as neon_error:
+        logger.warning("Neon follow-up failed for round %s, using the template: %s", round_id, neon_error)
+    finally:
+        worker_pool.shutdown(wait=False)
+
+    top_statement = statements_by_suspicion[0]
+    prompt_text = prompts[top_statement - 1]
     return {
         "statement": top_statement,
         "question": f"Tell me more about statement {top_statement} ({prompt_text.lower()}). What exactly happened, and when?",
+        "t_s": None,
+        "cue": None,
     }
 
 
