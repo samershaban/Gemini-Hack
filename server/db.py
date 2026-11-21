@@ -60,6 +60,7 @@ def create_tables() -> None:
     add_column_if_missing("rounds", "call_json", "TEXT")
     add_column_if_missing("rounds", "result_json", "TEXT")
     add_column_if_missing("rounds", "tried_to_trick", "INTEGER")
+    add_column_if_missing("rounds", "tags_json", "TEXT")
 
     connection = open_connection()
     with connection:
@@ -257,3 +258,17 @@ def get_clips_for_round(round_id: str) -> list[dict]:
             clip[plain_name] = json.loads(clip[json_column]) if clip[json_column] else None
         clips.append(clip)
     return clips
+
+
+def save_round_tags(round_id: str, tags: list[str]) -> None:
+    connection = open_connection()
+    with connection:
+        connection.execute("UPDATE rounds SET tags_json = ? WHERE round_id = ?", (json.dumps(tags), round_id))
+    connection.close()
+
+
+def get_most_recent_round_id() -> str | None:
+    connection = open_connection()
+    row = connection.execute("SELECT round_id FROM rounds ORDER BY created_at DESC LIMIT 1").fetchone()
+    connection.close()
+    return row["round_id"] if row else None
