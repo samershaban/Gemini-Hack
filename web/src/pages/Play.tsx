@@ -1,9 +1,7 @@
 import { useState } from 'react';
 import { isMock, mockLabel } from '../api';
-import type { Phase, Scoreboard } from '../contract';
+import type { Phase, Role, Scoreboard } from '../contract';
 import { useRoom } from '../lib/room';
-
-type Role = 'eye' | 'voter';
 
 export default function Play() {
   const params = new URLSearchParams(location.search);
@@ -13,12 +11,14 @@ export default function Play() {
   const [phase, setPhase] = useState<Phase>('lobby');
   const [vote, setVote] = useState<number | null>(null);
   const [score, setScore] = useState<Scoreboard | null>(null);
+  const [secret, setSecret] = useState<{ statement: number; prompt: string } | null>(null);
 
   const send = useRoom(joined ? room : null, (m) => {
     if (m.type === 'phase') {
       setPhase(m.phase);
       if (m.phase === 'baseline') setVote(null); // new round
     }
+    if (m.type === 'secret' && joined === 'player') setSecret({ statement: m.statement, prompt: m.prompt });
     if (m.type === 'scoreboard') {
       const { type: _type, ...board } = m;
       setScore(board);
@@ -48,6 +48,9 @@ export default function Play() {
         <button className="btn big" disabled={!room || !name.trim()} onClick={() => join('voter')}>
           Vote
         </button>
+        <button className="btn" disabled={!room || !name.trim()} onClick={() => join('player')}>
+          I'm the player
+        </button>
         <button className="btn ghost" disabled={!room || !name.trim()} onClick={() => join('eye')}>
           Be an extra Eye (camera)
         </button>
@@ -61,6 +64,24 @@ export default function Play() {
       <div className="play">
         <div className="brand">EYE · {room}</div>
         <p>Camera angle mode comes next.</p>
+      </div>
+    );
+  }
+
+  if (joined === 'player') {
+    return (
+      <div className="play">
+        <div className="brand">PLAYER · {room}</div>
+        {secret ? (
+          <div className="secret">
+            <div className="secret-tag">KEEP THIS HIDDEN. LIE ON</div>
+            <div className="secret-n">#{secret.statement}</div>
+            <div className="secret-prompt">{secret.prompt}</div>
+            <p>Tell the truth on the other two.</p>
+          </div>
+        ) : (
+          <p>Waiting for the round to start…</p>
+        )}
       </div>
     );
   }
