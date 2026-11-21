@@ -1,0 +1,227 @@
+{
+  "model": "gemini-decision-1",
+  "clip": "ForBiggerBlazes_5s.mp4",
+  "clip_size_kb": 839,
+  "questions_per_call": 11,
+  "runs_per_variant": 5,
+  "measured_at": "2026-11-21 13:59:36",
+  "variants": [
+    {
+      "variant": "A_inline_low",
+      "latencies_ms": [
+        2290.5,
+        1480.0,
+        1734.7,
+        1407.8,
+        5152.5
+      ],
+      "min_ms": 1407.8,
+      "median_ms": 1734.7,
+      "max_ms": 5152.5,
+      "input_tokens": 1249,
+      "missing_question_keys": [],
+      "example_answers": {
+        "long_pause_before_answering": {
+          "type": "noul",
+          "value": 0.42762864472734186,
+          "confidence": 0.572
+        },
+        "speech_speeds_up": {
+          "type": "noul",
+          "value": 0.27687390170473913,
+          "confidence": 0.723
+        },
+        "hedging_words": {
+          "type": "noul",
+          "value": 0.17269067359659396,
+          "confidence": 0.827
+        },
+        "gaze_breaks_away": {
+          "type": "noul",
+          "value": 0.21569669596683963,
+          "confidence": 0.784
+        },
+        "touches_face": {
+          "type": "noul",
+          "value": 0.1941126109332224,
+          "confidence": 0.806
+        },
+        "hesitation_level": {
+          "type": "score",
+          "value": 0.6428844351586539,
+          "confidence": 0.635
+        },
+        "very_little_detail": {
+          "type": "noul",
+          "value": 0.520373891489968,
+          "confidence": 0.52
+        },
+        "self_correction": {
+          "type": "noul",
+          "value": 0.16018092694752464,
+          "confidence": 0.84
+        },
+        "pitch_rises": {
+          "type": "noul",
+          "value": 0.3084253198740635,
+          "confidence": 0.692
+        },
+        "cues_look_exaggerated": {
+          "type": "noul",
+          "value": 0.26541930776358047,
+          "confidence": 0.735
+        },
+        "smile_does_not_match": {
+          "type": "noul",
+          "value": 0.178864936450169,
+          "confidence": 0.821
+        }
+      }
+    },
+    {
+      "variant": "B_inline_default",
+      "latencies_ms": [
+        1546.5,
+        1624.5,
+        933.5,
+        758.0,
+        2071.4
+      ],
+      "min_ms": 758.0,
+      "median_ms": 1546.5,
+      "max_ms": 2071.4,
+      "input_tokens": 1249,
+      "missing_question_keys": [],
+      "example_answers": {
+        "smile_does_not_match": {
+          "type": "noul",
+          "value": 0.178864936450169,
+          "confidence": 0.821
+        },
+        "hedging_words": {
+          "type": "noul",
+          "value": 0.17269067359659396,
+          "confidence": 0.827
+        },
+        "very_little_detail": {
+          "type": "noul",
+          "value": 0.520373891489968,
+          "confidence": 0.52
+        },
+        "touches_face": {
+          "type": "noul",
+          "value": 0.1941126109332224,
+          "confidence": 0.806
+        },
+        "cues_look_exaggerated": {
+          "type": "noul",
+          "value": 0.26541930776358047,
+          "confidence": 0.735
+        },
+        "hesitation_level": {
+          "type": "score",
+          "value": 0.6428844351586539,
+          "confidence": 0.635
+        },
+        "long_pause_before_answering": {
+          "type": "noul",
+          "value": 0.42762864472734186,
+          "confidence": 0.572
+        },
+        "self_correction": {
+          "type": "noul",
+          "value": 0.16018092694752464,
+          "confidence": 0.84
+        },
+        "gaze_breaks_away": {
+          "type": "noul",
+          "value": 0.21569669596683963,
+          "confidence": 0.784
+        },
+        "speech_speeds_up": {
+          "type": "noul",
+          "value": 0.27687390170473913,
+          "confidence": 0.723
+        },
+        "pitch_rises": {
+          "type": "noul",
+          "value": 0.3084253198740635,
+          "confidence": 0.692
+        }
+      }
+    },
+    {
+      "variant": "C_files_api_low",
+      "latencies_ms": [
+        513.8,
+        568.4,
+        706.4,
+        816.8,
+        634.8
+      ],
+      "min_ms": 513.8,
+      "median_ms": 634.8,
+      "max_ms": 816.8,
+      "input_tokens": 1249,
+      "missing_question_keys": [],
+      "example_answers": {
+        "speech_speeds_up": {
+          "type": "noul",
+          "value": 0.27687390170473913,
+          "confidence": 0.723
+        },
+        "gaze_breaks_away": {
+          "type": "noul",
+          "value": 0.21569669596683963,
+          "confidence": 0.784
+        },
+        "long_pause_before_answering": {
+          "type": "noul",
+          "value": 0.42762864472734186,
+          "confidence": 0.572
+        },
+        "hedging_words": {
+          "type": "noul",
+          "value": 0.17269067359659396,
+          "confidence": 0.827
+        },
+        "smile_does_not_match": {
+          "type": "noul",
+          "value": 0.178864936450169,
+          "confidence": 0.821
+        },
+        "hesitation_level": {
+          "type": "score",
+          "value": 0.6428844351586539,
+          "confidence": 0.635
+        },
+        "self_correction": {
+          "type": "noul",
+          "value": 0.16018092694752464,
+          "confidence": 0.84
+        },
+        "touches_face": {
+          "type": "noul",
+          "value": 0.1941126109332224,
+          "confidence": 0.806
+        },
+        "pitch_rises": {
+          "type": "noul",
+          "value": 0.3084253198740635,
+          "confidence": 0.692
+        },
+        "cues_look_exaggerated": {
+          "type": "noul",
+          "value": 0.26541930776358047,
+          "confidence": 0.735
+        },
+        "very_little_detail": {
+          "type": "noul",
+          "value": 0.520373891489968,
+          "confidence": 0.52
+        }
+      },
+      "upload_and_wait_ms": 3937.0
+    }
+  ]
+}
