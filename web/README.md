@@ -5,7 +5,8 @@ Vite + React + TypeScript. `/stage` runs on the laptop/projector, `/play` on pho
 ```sh
 npm install
 npm run dev            # uses src/mock.ts (fake Part A with realistic delays)
-VITE_MOCK=0 npm run dev  # proxies /rounds, /frames, /ws to Part A at http://localhost:8000 (API_TARGET to override)
+npm run dev:brain      # everything goes to Part A (brain branch) at http://localhost:8000 (API_TARGET to override)
+VITE_REAL=rounds,clips npm run dev  # mix: listed endpoints real, the rest mocked
 npm run build          # production build: the mock is compiled out and can never run in the demo
 ```
 
