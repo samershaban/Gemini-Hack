@@ -218,10 +218,11 @@ export default function Stage() {
     setFrame(blob ? await frameAt(blob, verdict.t_s ?? 1) : null); // no timestamp: an early frame
   };
 
-  const doReveal = () =>
+  // The player picked their own lie; they say which one it was here, after Gemini's call.
+  const doReveal = (lieStatement: number) =>
     guard('reveal', async () => {
       const api = await getApi();
-      const r = await api.reveal(round!.round_id, { tried_to_trick: trick });
+      const r = await api.reveal(round!.round_id, { tried_to_trick: trick, lie_statement: lieStatement });
       setReveal(r);
       setScore(r.scoreboard);
       setStamp(false);
@@ -361,9 +362,12 @@ export default function Stage() {
                     <input type="checkbox" checked={trick} onChange={(e) => setTrick(e.target.checked)} />
                     Trying to trick it?
                   </label>
-                  <button className="btn hot" disabled={busy !== null} onClick={doReveal}>
-                    {busy === 'reveal' ? '…' : 'Reveal'}
-                  </button>
+                  <span className="hint">Which one was the lie?</span>
+                  {[1, 2, 3].map((n) => (
+                    <button key={n} className="btn hot" disabled={busy !== null} onClick={() => doReveal(n)}>
+                      {busy === 'reveal' ? '…' : `#${n}`}
+                    </button>
+                  ))}
                 </>
               )}
               {reveal && (
@@ -404,8 +408,6 @@ function SlotButton({ label, slot, disabled, onClick }: { label: string; slot: S
 
 function Roster({ players, points }: { players: RosterEntry[]; points?: Scoreboard['players'] }) {
   const pts = new Map(points?.map((p) => [p.name, p.points]));
-  // the stage player first, then voters in join order
-  const sorted = [...players].sort((a, b) => Number(b.role === 'player') - Number(a.role === 'player'));
   return (
     <div className="roster">
       <div className="roster-tag">IN THE ROOM · {players.length}</div>
@@ -413,10 +415,9 @@ function Roster({ players, points }: { players: RosterEntry[]; points?: Scoreboa
         <div className="roster-empty">Scan the QR code to join</div>
       ) : (
         <ul>
-          {sorted.map((p) => (
+          {players.map((p) => (
             <li key={`${p.role}:${p.name}`}>
               <span className="roster-name">{p.name}</span>
-              {p.role === 'player' && <span className="roster-role">PLAYER</span>}
               {pts.has(p.name) && <span className="roster-pts">{pts.get(p.name)}</span>}
             </li>
           ))}

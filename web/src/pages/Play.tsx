@@ -1,35 +1,34 @@
 import { useState } from 'react';
 import { isMock, mockLabel } from '../api';
-import type { Phase, Role, Scoreboard } from '../contract';
+import type { Phase, Scoreboard } from '../contract';
 import { useRoom } from '../lib/room';
 
 export default function Play() {
   const params = new URLSearchParams(location.search);
   const [room, setRoom] = useState(params.get('room')?.toUpperCase() ?? '');
   const [name, setName] = useState('');
-  const [joined, setJoined] = useState<Role | null>(null);
+  const [joined, setJoined] = useState(false);
   const [phase, setPhase] = useState<Phase>('lobby');
   const [vote, setVote] = useState<number | null>(null);
   const [score, setScore] = useState<Scoreboard | null>(null);
-  const [secret, setSecret] = useState<{ statement: number; prompt: string } | null>(null);
 
   const send = useRoom(joined ? room : null, (m) => {
     if (m.type === 'phase') {
       setPhase(m.phase);
       if (m.phase === 'baseline') setVote(null); // new round
     }
-    if (m.type === 'secret' && joined === 'player') setSecret({ statement: m.statement, prompt: m.prompt });
     if (m.type === 'scoreboard') {
       const { type: _type, ...board } = m;
       setScore(board);
     }
   });
 
-  const join = (role: Role) => {
+  // Phones only vote: the player is on stage and picks their own lie.
+  const join = () => {
     if (!room || !name.trim()) return;
-    setJoined(role);
+    setJoined(true);
     // useRoom connects on the next render; the real socket queues until open
-    setTimeout(() => send({ type: 'join', name: name.trim(), role }), 0);
+    setTimeout(() => send({ type: 'join', name: name.trim(), role: 'voter' }), 0);
   };
 
   const cast = (statement: number) => {
@@ -45,31 +44,10 @@ export default function Play() {
         <div className="brand">POKER FACE</div>
         <input className="field" placeholder="ROOM" value={room} maxLength={4} onChange={(e) => setRoom(e.target.value.toUpperCase())} />
         <input className="field" placeholder="Your name" value={name} maxLength={16} onChange={(e) => setName(e.target.value)} />
-        <button className="btn big" disabled={!room || !name.trim()} onClick={() => join('voter')}>
+        <button className="btn big" disabled={!room || !name.trim()} onClick={join}>
           Vote
         </button>
-        <button className="btn" disabled={!room || !name.trim()} onClick={() => join('player')}>
-          I'm the player
-        </button>
         {isMock && <div className="mock-badge">{mockLabel}</div>}
-      </div>
-    );
-  }
-
-  if (joined === 'player') {
-    return (
-      <div className="play">
-        <div className="brand">PLAYER · {room}</div>
-        {secret ? (
-          <div className="secret">
-            <div className="secret-tag">KEEP THIS HIDDEN. LIE ON</div>
-            <div className="secret-n">#{secret.statement}</div>
-            <div className="secret-prompt">{secret.prompt}</div>
-            <p>Tell the truth on the other two.</p>
-          </div>
-        ) : (
-          <p>Waiting for the round to start…</p>
-        )}
       </div>
     );
   }
