@@ -9,6 +9,7 @@ import type {
   Api,
   CallRes,
   ClientMsg,
+  ClipKind,
   ClipRes,
   CreateRoundRes,
   RevealRes,
@@ -56,6 +57,19 @@ function roundOf(id: string): MockRound {
   return r;
 }
 
+// Hybrid mode (VITE_REAL): the real server owns some endpoints, and the mock is told about
+// rounds and clips it did not create so its later endpoints keep working.
+export function adoptRound(round_id: string, room: string, lieIndex = 1) {
+  rounds.set(round_id, { room, lieIndex, analyses: 0, hadFollowup: false, votes: new Map() });
+  broadcast(room, { type: 'phase', phase: 'baseline' });
+}
+export function noteClip(round_id: string, kind: ClipKind) {
+  const r = rounds.get(round_id);
+  if (!r) return;
+  if (kind === 'statement') broadcast(r.room, { type: 'phase', phase: 'statements' });
+  if (kind === 'followup') r.hadFollowup = true;
+}
+
 const PROMPTS: [string, string, string][] = [
   ['A place you have been', 'Something you can cook', 'A time you got in trouble'],
   ['Your first job', 'A pet you had', 'A famous person you met'],
@@ -75,9 +89,7 @@ export const mockApi: Api = {
   async createRound({ room }): Promise<CreateRoundRes> {
     await sleep(jitter(180));
     const round_id = `r${++seq}-${Date.now().toString(36)}`;
-    const round: MockRound = { room, lieIndex: 1, analyses: 0, hadFollowup: false, votes: new Map() };
-    rounds.set(round_id, round);
-    broadcast(room, { type: 'phase', phase: 'baseline' });
+    adoptRound(round_id, room);
     return { round_id, prompts: PROMPTS[seq % PROMPTS.length] };
   },
 
@@ -85,8 +97,7 @@ export const mockApi: Api = {
     const r = roundOf(roundId);
     // ffmpeg convert + files.upload + Hydrogen transcript, scaled roughly by clip size
     await sleep(jitter(1400 + Math.min(clip.file.size / 2000, 1500)));
-    if (clip.kind === 'statement') broadcast(r.room, { type: 'phase', phase: 'statements' });
-    if (clip.kind === 'followup') r.hadFollowup = true;
+    noteClip(roundId, clip.kind);
     const t =
       clip.kind === 'baseline'
         ? TRANSCRIPTS[(clip.index - 1) % 2]
