@@ -263,6 +263,7 @@ async def room_websocket(websocket: WebSocket, room_name: str):
     room = room_hub.get_room(room_name)
     await room_hub.send_to_one(connected_phone, {"type": "phase", "phase": room.current_phase})
     await room_hub.send_to_one(connected_phone, {"type": "scoreboard", **build_scoreboard(room_name)})
+    await room_hub.send_to_one(connected_phone, room_hub.build_roster_message(room_name))
     try:
         while True:
             message = await websocket.receive_json()
