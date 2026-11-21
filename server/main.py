@@ -62,6 +62,9 @@ class CreateRoundRequest(BaseModel):
 
 class RevealRequest(BaseModel):
     tried_to_trick: bool = False
+    # Optional: the stage can say which statement was really the lie (1-3).
+    # Otherwise we use the player's phone confirmation, then the secret.
+    lie_statement: int | None = None
 
 
 def send_to_room_from_worker_thread(room_name: str, message: dict) -> None:
@@ -147,6 +150,14 @@ def upload_clip(
     except ClipConversionError as conversion_error:
         raise HTTPException(status_code=422, detail=str(conversion_error))
 
+    # The stage always sends follow-up clips with index 1, so remember which statement
+    # the follow-up question was about (from the latest analysis).
+    pressed_statement = None
+    follow_up_question = None
+    if kind == "followup" and round_info["analysis"] and round_info["analysis"].get("follow_up"):
+        pressed_statement = round_info["analysis"]["follow_up"]["statement"]
+        follow_up_question = round_info["analysis"]["follow_up"]["question"]
+
     db.insert_clip(
         clip_id=clip_id,
         round_id=round_id,
@@ -155,6 +166,8 @@ def upload_clip(
         camera_id=camera_id,
         original_path=str(original_path),
         mp4_path=str(mp4_path),
+        pressed_statement=pressed_statement,
+        follow_up_question=follow_up_question,
     )
 
     clip_measurements = measure_clip(mp4_path)
@@ -165,6 +178,12 @@ def upload_clip(
         measures=clip_measurements["measures"],
         events=clip_measurements["events"],
     )
+    if clip_measurements["trim"] is not None:
+        db.save_clip_trim(
+            clip_id,
+            clip_measurements["trim"]["trimmed_seconds"],
+            clip_measurements["trim"]["untrimmed_mp4_path"],
+        )
 
     # Upload to the Gemini Files API after responding. Decision 1 answers faster on an
     # uploaded file (635 ms median) than on inline video (about 1.6 s), see docs/timing_decision_1.json.
@@ -222,7 +241,7 @@ def call(round_id: str):
 @app.post("/rounds/{round_id}/reveal")
 def reveal(round_id: str, request_body: RevealRequest):
     round_info = get_round_or_404(round_id)
-    reveal_result = reveal_round(round_id, request_body.tried_to_trick)
+    reveal_result = reveal_round(round_id, request_body.tried_to_trick, request_body.lie_statement)
     send_to_room_from_worker_thread(round_info["room"], {"type": "phase", "phase": "reveal"})
     send_to_room_from_worker_thread(round_info["room"], {"type": "scoreboard", **reveal_result["scoreboard"]})
     return reveal_result
@@ -252,10 +271,28 @@ async def room_websocket(websocket: WebSocket, room_name: str):
             if message_type == "join":
                 connected_phone.name = str(message.get("name") or "anonymous")[:40]
                 connected_phone.role = message.get("role") if message.get("role") in ["voter", "player"] else "voter"
+                connected_phone.has_joined = True
+                await room_hub.send_player_list(room_name)
                 # A player who joins after the round started still gets the secret.
                 latest_round = db.get_latest_round_in_room(room_name)
                 if connected_phone.role == "player" and latest_round and latest_round["result"] is None:
                     await room_hub.send_to_one(connected_phone, build_secret_message(latest_round))
+
+            elif message_type == "confirm_lie":
+                # The player says which statement was really their lie (they don't always
+                # lie on the one the server picked).
+                latest_round = db.get_latest_round_in_room(room_name)
+                statement = message.get("statement")
+                if connected_phone.role != "player":
+                    await room_hub.send_to_one(connected_phone, {"type": "error", "detail": "Only the player can confirm the lie"})
+                elif latest_round is None or statement not in [1, 2, 3]:
+                    await room_hub.send_to_one(connected_phone, {"type": "error", "detail": "statement must be 1, 2, or 3"})
+                elif latest_round["call"] is not None:
+                    # Locked once Gemini has made its call, so nobody can switch after seeing the guess.
+                    await room_hub.send_to_one(connected_phone, {"type": "error", "detail": "Too late: Gemini already made its call"})
+                else:
+                    db.save_confirmed_lie(latest_round["round_id"], statement)
+                    await room_hub.send_to_one(connected_phone, {"type": "lie_confirmed", "statement": statement})
 
             elif message_type == "vote":
                 latest_round = db.get_latest_round_in_room(room_name)
@@ -271,3 +308,4 @@ async def room_websocket(websocket: WebSocket, room_name: str):
         pass
     finally:
         room_hub.remove_connection(room_name, connected_phone)
+        await room_hub.send_player_list(room_name)

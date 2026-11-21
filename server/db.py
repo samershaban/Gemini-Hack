@@ -13,6 +13,7 @@ from server.paths import DATA_FOLDER, DATABASE_FILE
 def open_connection() -> sqlite3.Connection:
     """Open a new connection. Rows come back as dict-like objects."""
     DATA_FOLDER.mkdir(parents=True, exist_ok=True)
+    DATABASE_FILE.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DATABASE_FILE)
     connection.row_factory = sqlite3.Row
     return connection
@@ -61,6 +62,11 @@ def create_tables() -> None:
     add_column_if_missing("rounds", "result_json", "TEXT")
     add_column_if_missing("rounds", "tried_to_trick", "INTEGER")
     add_column_if_missing("rounds", "tags_json", "TEXT")
+    add_column_if_missing("rounds", "confirmed_lie_statement", "INTEGER")
+    add_column_if_missing("clips", "pressed_statement", "INTEGER")
+    add_column_if_missing("clips", "follow_up_question", "TEXT")
+    add_column_if_missing("clips", "trimmed_seconds", "REAL")
+    add_column_if_missing("clips", "untrimmed_mp4_path", "TEXT")
 
     connection = open_connection()
     with connection:
@@ -194,14 +200,17 @@ def insert_clip(
     camera_id: str,
     original_path: str,
     mp4_path: str,
+    pressed_statement: int | None = None,
+    follow_up_question: str | None = None,
 ) -> None:
+    """For follow-up clips: which statement the question was about, and the question asked."""
     connection = open_connection()
     with connection:
         connection.execute(
             """
             INSERT INTO clips (clip_id, round_id, kind, statement_index, camera_id,
-                               original_path, mp4_path, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                               original_path, mp4_path, pressed_statement, follow_up_question, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 clip_id,
@@ -211,6 +220,8 @@ def insert_clip(
                 camera_id,
                 original_path,
                 mp4_path,
+                pressed_statement,
+                follow_up_question,
                 get_current_time_text(),
             ),
         )
@@ -272,3 +283,21 @@ def get_most_recent_round_id() -> str | None:
     row = connection.execute("SELECT round_id FROM rounds ORDER BY created_at DESC LIMIT 1").fetchone()
     connection.close()
     return row["round_id"] if row else None
+
+
+def save_clip_trim(clip_id: str, trimmed_seconds: float, untrimmed_mp4_path: str) -> None:
+    connection = open_connection()
+    with connection:
+        connection.execute(
+            "UPDATE clips SET trimmed_seconds = ?, untrimmed_mp4_path = ? WHERE clip_id = ?",
+            (trimmed_seconds, untrimmed_mp4_path, clip_id),
+        )
+    connection.close()
+
+
+def save_confirmed_lie(round_id: str, statement: int) -> None:
+    """The player said which statement was really their lie."""
+    connection = open_connection()
+    with connection:
+        connection.execute("UPDATE rounds SET confirmed_lie_statement = ? WHERE round_id = ?", (statement, round_id))
+    connection.close()

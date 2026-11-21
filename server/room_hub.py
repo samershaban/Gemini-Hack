@@ -4,6 +4,8 @@ Messages are JSON with a "type" field (see the contract in the PRD):
 - server -> everyone: phase, suspicion, tell, scoreboard
 - phone -> server: join {name, role}, vote {statement}
 - server -> player phone only: secret {round_id, lie_index, statement, prompt}
+- server -> everyone: players {players: [{name, role}]} whenever someone joins or leaves
+- player phone -> server: confirm_lie {statement} (the lie they chose; locked once Gemini calls it)
 """
 
 import logging
@@ -19,6 +21,7 @@ class ConnectedPhone:
     websocket: WebSocket
     name: str = "anonymous"
     role: str = "voter"  # "voter" or "player"
+    has_joined: bool = False  # True after the phone sends its join message (the stage never does)
 
 
 @dataclass
@@ -57,6 +60,15 @@ class RoomHub:
             self.get_room(room_name).current_phase = message["phase"]
         for connected_phone in list(self.get_room(room_name).connections):
             await self.send_to_one(connected_phone, message)
+
+    async def send_player_list(self, room_name: str) -> None:
+        """Everyone who has joined (sent a join message), for the stage's player list."""
+        joined_phones = [
+            {"name": connected_phone.name, "role": connected_phone.role}
+            for connected_phone in self.get_room(room_name).connections
+            if connected_phone.has_joined
+        ]
+        await self.send_to_everyone(room_name, {"type": "players", "players": joined_phones})
 
     async def send_to_players(self, room_name: str, message: dict) -> None:
         """Only phones that joined with role "player" get this (used for the secret)."""
