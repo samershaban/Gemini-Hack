@@ -16,5 +16,11 @@ npm run build          # production build: the mock is compiled out and can neve
 - `src/lib/media.ts`: camera hook, one-tap clip recorder (`MediaRecorder`), still-frame grab, host voice
 - `src/eye/EyeScene.ts`: Ogle, the Eye (Babylon.js, original mascot drawn in code: no external assets)
 
+**Phones join by scanning the QR code on the stage** (`src/components/JoinQr.tsx`). The QR code points at the stage's own address, so phones must be able to reach it:
+
+- Easiest: run `cloudflared tunnel --url http://localhost:5173` and open `/stage` through the `https://…trycloudflare.com` link.
+- Or keep the stage on `localhost` and run `VITE_PUBLIC_URL=https://xxx.trycloudflare.com npm run dev:brain`.
+- Don't open the stage on a plain `http://` LAN IP: the browser blocks the camera there. On `localhost` without `VITE_PUBLIC_URL`, the QR card shows a warning.
+
 Dev poking: `/stage?mood=busted&sus=0.9`, or `ogle.setMood('dizzy')` in the console.
 Moods: `idle`, `thinking`, `squint`, `busted`, `dizzy`, `smug`.

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { assetUrl, getApi, isMock, mockLabel } from '../api';
 import type { AnalyzeRes, CallRes, ClipKind, ClipRes, CreateRoundRes, Measures, Phase, RevealRes, Scoreboard, ServerMsg, Tell } from '../contract';
+import { JoinQr } from '../components/JoinQr';
 import { Eye, type EyeHandle } from '../eye/Eye';
 import type { Mood } from '../eye/EyeScene';
 import { ClipRecorder, frameAt, say, useCamera } from '../lib/media';
@@ -269,6 +270,7 @@ export default function Stage() {
         </ol>
       )}
 
+      {!verdict && !reveal && <JoinQr room={room} big={!round} />}
       <div className="chips">
         {visibleTells.map((t, i) => (
           <div key={tellKey(t)} className="chip" style={chipPos(i)}>
