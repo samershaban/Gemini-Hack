@@ -149,7 +149,9 @@ b, .brand, .btn, .slot-label, .stamp, .busted-big, .reveal-big, .vote, .phase, .
 @keyframes title-drop { from { transform: translateY(-140%) rotate(-12deg); opacity: 0; } }
 @keyframes title-bob { 50% { transform: translateY(-6px) rotate(2deg); } }
 .home-bottom { display: flex; flex-direction: column; align-items: center; gap: 14px; animation: home-rise 0.6s cubic-bezier(0.2, 1.5, 0.4, 1) 0.9s both; }
-.home-buttons { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; }
+.home-buttons { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; align-items: center; }
+/* Join Game: solid white (the see-through ghost style got lost on the sunburst) */
+.home-buttons .btn.ghost { background: var(--white); box-shadow: var(--pop); }
 @keyframes home-rise { from { transform: translateY(60px); opacity: 0; } }
 .home-tagline { margin: 0; max-width: 420px; text-align: center; font-size: 19px; font-weight: 700; line-height: 1.25; background: var(--white); border: var(--line); border-radius: 16px; padding: 8px 14px; box-shadow: 4px 4px 0 var(--black); }
 @media (prefers-reduced-motion: reduce) {
