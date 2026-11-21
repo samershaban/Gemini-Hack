@@ -20,8 +20,8 @@ function Home() {
   return (
     <div className="play">
       <div className="brand">POKER FACE</div>
-      <Link className="btn big" to="/stage">Stage</Link>
-      <Link className="btn ghost" to="/play">Play</Link>
+      <Link className="btn big" to="/stage">New Game</Link>
+      <Link className="btn ghost" to="/play">Join Game</Link>
     </div>
   );
 }

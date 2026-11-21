@@ -24,6 +24,15 @@ import {
 
 export type Mood = 'idle' | 'thinking' | 'squint' | 'busted' | 'dizzy' | 'smug';
 
+/** What the stage drives. EyeScene (WebGL) and FlatEye (SVG fallback) both implement it. */
+export interface EyeApi {
+  setLook(x: number, y: number): void;
+  setSuspicion(s: number): void;
+  setMood(m: Mood): void;
+  blink(): void;
+  dispose(): void;
+}
+
 export const PALETTE = {
   orange: '#ff7a00',
   yellow: '#ffd23f',
@@ -111,7 +120,7 @@ const LIDS: Record<Mood, { upper: number; lower: number; browY: number; browTilt
 const damp = (cur: number, target: number, rate: number, dt: number) =>
   cur + (target - cur) * (1 - Math.exp(-rate * dt));
 
-export class EyeScene {
+export class EyeScene implements EyeApi {
   private engine: Engine;
   private scene: Scene;
   private camera: FreeCamera;
