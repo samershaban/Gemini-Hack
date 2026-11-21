@@ -1,7 +1,8 @@
 """The round pipeline: analyze (fused Decision 1 call), then the call.
 
 Numbering used in every response: `statement` is 1, 2, or 3. `lie_probs` is a list in
-statement order, and `lie_index` (in /reveal) is 0, 1, or 2, the position in that list.
+statement order, and `lie_index` (in /reveal) is 0, 1, or 2, the position in that list. The player picks
+their own lie and the stage sends it to /reveal as `lie_statement` (1-3).
 """
 
 import logging

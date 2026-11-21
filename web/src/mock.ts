@@ -101,8 +101,6 @@ export const mockApi: Api = {
     const round_id = `r${++seq}-${Date.now().toString(36)}`;
     const prompts = PROMPTS[seq % PROMPTS.length];
     adoptRound(round_id, room);
-    // the real hub sends this only to role "player"; mock Play pages filter by role themselves
-    broadcast(room, { type: 'secret', round_id, lie_index: 1, statement: 2, prompt: prompts[1] });
     return { round_id, prompts };
   },
 
@@ -187,8 +185,9 @@ export const mockApi: Api = {
     };
   },
 
-  async reveal(roundId, { tried_to_trick }): Promise<RevealRes> {
+  async reveal(roundId, { tried_to_trick, lie_statement }): Promise<RevealRes> {
     const r = roundOf(roundId);
+    r.lieIndex = lie_statement - 1; // the player says which one was the lie
     await sleep(jitter(300));
     const correct = r.lieIndex === 1; // mock call always says statement 2
     const votes = [...r.votes.values()];

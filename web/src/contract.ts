@@ -2,7 +2,7 @@
 // Change only by telling Belal.
 //
 // Numbering (confirmed against the brain branch):
-//  - `statement` everywhere (tells, call, follow_up, vote, secret) is 1, 2 or 3.
+//  - `statement` everywhere (tells, call, follow_up, vote, reveal's lie_statement) is 1, 2 or 3.
 //  - `lie_probs` is in statement order; `lie_index` in /reveal is 0, 1 or 2.
 //  - clip `index` is 1-based within its kind (baseline 1-2, statement 1-3, followup 1).
 
@@ -59,6 +59,7 @@ export interface CallRes {
 
 export interface RevealReq {
   tried_to_trick: boolean;
+  lie_statement: number; // 1-3: the player picks their own lie and says which at the reveal
 }
 export interface Scoreboard {
   gemini: number;
@@ -80,12 +81,11 @@ export type ServerMsg =
   | { type: 'suspicion'; value: number }
   | { type: 'tell'; statement: number; t_s: number | null; label: string }
   | ({ type: 'scoreboard' } & Scoreboard) // fields are flattened into the message
-  | { type: 'secret'; round_id: string; lie_index: number; statement: number; prompt: string } // player's phone only
   | { type: 'vote_locked'; statement: number }
   | { type: 'roster'; players: RosterEntry[] } // PROPOSED for Part A: everyone who joined, sent on every join/leave
   | { type: 'error'; detail: string };
 
-export type Role = 'voter' | 'player';
+export type Role = 'voter'; // phones only vote; the player is on stage
 export interface RosterEntry {
   name: string;
   role: Role;

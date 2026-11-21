@@ -30,7 +30,3 @@ def pick_three_prompts() -> list[str]:
     """Return three different prompts, in random order."""
     return random.sample(ALL_PROMPTS, 3)
 
-
-def pick_lie_index() -> int:
-    """Secretly choose which of the three statements (0, 1, or 2) the player must lie about."""
-    return random.randint(0, 2)

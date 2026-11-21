@@ -115,10 +115,6 @@ b, .brand, .btn, .slot-label, .stamp, .busted-big, .reveal-big, .vote, .phase, .
 .vote { font: inherit; font-weight: 700; font-size: 56px; padding: 14px; background: var(--white); border: var(--line); border-radius: 22px; box-shadow: var(--pop); cursor: pointer; }
 .vote:disabled:not(.picked) { opacity: 0.4; }
 .vote.picked { background: var(--orange); transform: translate(4px, 4px); box-shadow: 2px 2px 0 var(--black); }
-.secret { background: var(--black); color: var(--white); border-radius: 22px; padding: 20px 24px; text-align: center; box-shadow: 6px 6px 0 var(--orange); width: min(340px, 100%); }
-.secret-tag { color: var(--orange); font-weight: 700; font-size: 14px; letter-spacing: 0.08em; }
-.secret-n { font-size: 72px; font-weight: 700; line-height: 1; color: var(--yellow); }
-.secret-prompt { font-size: 24px; font-weight: 700; }
 
 /* Scan-to-join QR (bottom-left, above the controls; bigger in the lobby) */
 .join-qr { position: absolute; left: 18px; bottom: 110px; z-index: 4; width: 220px; background: var(--white); border: var(--line); border-radius: 18px; box-shadow: var(--pop); padding: 10px 12px 12px; text-align: center; }

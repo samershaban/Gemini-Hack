@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from server import db
 from server.clip_measures import measure_clip
@@ -27,7 +27,7 @@ from server.media import ClipConversionError, convert_clip_to_mp4
 from server.paths import get_round_folder
 from server.pipeline import RoundNotReadyError, analyze_round, make_call
 from server.room_hub import room_hub
-from server.round_prompts import pick_lie_index, pick_three_prompts
+from server.round_prompts import pick_three_prompts
 from server.scoring import build_scoreboard, reveal_round
 
 load_dotenv()
@@ -62,9 +62,8 @@ class CreateRoundRequest(BaseModel):
 
 class RevealRequest(BaseModel):
     tried_to_trick: bool = False
-    # Optional: the stage can say which statement was really the lie (1-3).
-    # Otherwise we use the player's phone confirmation, then the secret.
-    lie_statement: int | None = None
+    # The player picks their own lie, then says which one it was at the reveal (1, 2, or 3).
+    lie_statement: int = Field(ge=1, le=3)
 
 
 def send_to_room_from_worker_thread(room_name: str, message: dict) -> None:
@@ -73,17 +72,6 @@ def send_to_room_from_worker_thread(room_name: str, message: dict) -> None:
         anyio.from_thread.run(room_hub.send_to_everyone, room_name, message)
     except Exception as send_error:
         logger.warning("Could not send %s to room %s: %s", message.get("type"), room_name, send_error)
-
-
-def build_secret_message(round_info: dict) -> dict:
-    lie_index = round_info["lie_index"]
-    return {
-        "type": "secret",
-        "round_id": round_info["round_id"],
-        "lie_index": lie_index,
-        "statement": lie_index + 1,
-        "prompt": round_info["prompts"][lie_index],
-    }
 
 
 def get_round_or_404(round_id: str) -> dict:
@@ -102,16 +90,10 @@ def health_check():
 def create_round(request_body: CreateRoundRequest):
     round_id = uuid.uuid4().hex[:12]
     prompts = pick_three_prompts()
-    lie_index = pick_lie_index()
 
-    db.insert_round(round_id=round_id, room=request_body.room, prompts=prompts, lie_index=lie_index)
-
-    # The lie index stays secret: it only goes to the player's phone over the WebSocket.
-    round_info = db.get_round(round_id)
-    try:
-        anyio.from_thread.run(room_hub.send_to_players, request_body.room, build_secret_message(round_info))
-    except Exception as send_error:
-        logger.warning("Could not send the secret: %s", send_error)
+    # The player chooses their own lie and says which one at the reveal, so there is no
+    # secret lie any more. -1 fills the old lie_index column ("not chosen by the server").
+    db.insert_round(round_id=round_id, room=request_body.room, prompts=prompts, lie_index=-1)
     send_to_room_from_worker_thread(request_body.room, {"type": "phase", "phase": "baseline"})
 
     return {"round_id": round_id, "prompts": prompts}
@@ -271,30 +253,9 @@ async def room_websocket(websocket: WebSocket, room_name: str):
 
             if message_type == "join":
                 connected_phone.name = str(message.get("name") or "anonymous")[:40]
-                connected_phone.role = message.get("role") if message.get("role") in ["voter", "player"] else "voter"
+                connected_phone.role = "voter"  # phones only vote; the player is on stage
                 connected_phone.has_joined = True
                 await room_hub.send_player_list(room_name)
-                # A player who joins after the round started still gets the secret.
-                latest_round = db.get_latest_round_in_room(room_name)
-                if connected_phone.role == "player" and latest_round and latest_round["result"] is None:
-                    await room_hub.send_to_one(connected_phone, build_secret_message(latest_round))
-
-            elif message_type == "confirm_lie":
-                # The player says which statement was really their lie (they don't always
-                # lie on the one the server picked).
-                latest_round = db.get_latest_round_in_room(room_name)
-                statement = message.get("statement")
-                if connected_phone.role != "player":
-                    await room_hub.send_to_one(connected_phone, {"type": "error", "detail": "Only the player can confirm the lie"})
-                elif latest_round is None or statement not in [1, 2, 3]:
-                    await room_hub.send_to_one(connected_phone, {"type": "error", "detail": "statement must be 1, 2, or 3"})
-                elif latest_round["call"] is not None:
-                    # Locked once Gemini has made its call, so nobody can switch after seeing the guess.
-                    await room_hub.send_to_one(connected_phone, {"type": "error", "detail": "Too late: Gemini already made its call"})
-                else:
-                    db.save_confirmed_lie(latest_round["round_id"], statement)
-                    await room_hub.send_to_one(connected_phone, {"type": "lie_confirmed", "statement": statement})
-
             elif message_type == "vote":
                 latest_round = db.get_latest_round_in_room(room_name)
                 statement = message.get("statement")
