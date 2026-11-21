@@ -83,6 +83,7 @@ export type ServerMsg =
   | { type: 'tell'; statement: number; t_s: number | null; label: string }
   | ({ type: 'scoreboard' } & Scoreboard) // fields are flattened into the message
   | { type: 'vote_locked'; statement: number }
+  | { type: 'reveal_result'; lie_statement: number; gemini_statement: number | null; gemini_correct: boolean } // at the reveal, to every phone
   | { type: 'roster'; players: RosterEntry[] } // PROPOSED for Part A: everyone who joined, sent on every join/leave
   | { type: 'error'; detail: string };
 

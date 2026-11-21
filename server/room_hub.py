@@ -1,7 +1,8 @@
 """WebSocket hub: keeps track of who is connected to each room and sends messages.
 
 Messages are JSON with a "type" field (see the contract in the PRD):
-- server -> everyone: phase, suspicion, tell, scoreboard
+- server -> everyone: phase, suspicion, tell, scoreboard,
+  reveal_result {lie_statement, gemini_statement, gemini_correct} at the reveal
 - phone -> server: join {name, role}, vote {statement}
 - server -> everyone: roster {players: [{name, role}]} whenever someone joins or leaves,
   and to each new connection right away (so the stage gets the current list)

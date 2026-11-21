@@ -202,6 +202,7 @@ export const mockApi: Api = {
     if (correct) scoreboard.gemini += room_accuracy != null && room_accuracy < 0.5 ? 2 : 1;
     if (room_accuracy != null && room_accuracy >= 0.5) scoreboard.room += 1;
     void tried_to_trick;
+    broadcast(r.room, { type: 'reveal_result', lie_statement, gemini_statement: 2, gemini_correct: correct });
     broadcast(r.room, { type: 'phase', phase: 'reveal' });
     broadcast(r.room, { type: 'scoreboard', ...scoreboard });
     return { correct, lie_index: r.lieIndex, room_accuracy, scoreboard: { ...scoreboard } };

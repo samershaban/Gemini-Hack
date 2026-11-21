@@ -225,6 +225,14 @@ def call(round_id: str):
 def reveal(round_id: str, request_body: RevealRequest):
     round_info = get_round_or_404(round_id)
     reveal_result = reveal_round(round_id, request_body.tried_to_trick, request_body.lie_statement)
+    # Phones compare this with their own vote to show a "you got it" or "fooled you" screen.
+    saved_result = db.get_round(round_id)["result"]
+    send_to_room_from_worker_thread(round_info["room"], {
+        "type": "reveal_result",
+        "lie_statement": saved_result["lie_statement"],
+        "gemini_statement": saved_result["gemini_statement"],
+        "gemini_correct": saved_result["correct"],
+    })
     send_to_room_from_worker_thread(round_info["room"], {"type": "phase", "phase": "reveal"})
     send_to_room_from_worker_thread(round_info["room"], {"type": "scoreboard", **reveal_result["scoreboard"]})
     return reveal_result

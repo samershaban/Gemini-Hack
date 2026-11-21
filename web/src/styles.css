@@ -145,3 +145,17 @@ b, .brand, .btn, .slot-label, .stamp, .busted-big, .reveal-big, .vote, .phase, .
 /* Baseline prompts: easy truthful questions shown while the baseline is recorded */
 .prompts .prompts-tag { font-size: 13px; font-weight: 700; letter-spacing: 0.08em; opacity: 0.7; }
 .baseline-prompts b { width: auto; padding: 0 6px; border-radius: 10px; background: var(--yellow); }
+
+/* Phone result screen at the reveal: green-ish win, orange loss, plain for no vote */
+.result { text-align: center; }
+.result > * { animation: result-pop 0.45s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
+.result-right { background: #2fd17a; }
+.result-wrong { background: var(--orange); }
+.result-none { background: var(--white); }
+.result-big { font-size: 56px; font-weight: 700; line-height: 1; -webkit-text-stroke: 2px var(--black); color: var(--white); text-shadow: 4px 4px 0 var(--black); }
+.result-none .result-big { color: var(--yellow); }
+.result-detail { font-size: 24px; font-weight: 700; }
+.result-eye { font-size: 18px; background: var(--black); color: var(--yellow); padding: 6px 14px; border-radius: 12px; }
+.result-next { font-size: 14px; opacity: 0.7; }
+@keyframes result-pop { from { transform: scale(0.6); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .result > * { animation: none; } }
