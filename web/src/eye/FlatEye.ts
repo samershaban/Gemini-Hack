@@ -95,8 +95,10 @@ export class FlatEye implements EyeApi {
 
     this.brow = el('rect', { x: -50, y: -9, width: 100, height: 18, rx: 9, fill: PALETTE.black }, this.body);
 
+    this.tick(0); // draw the first frame now: rAF doesn't run in background tabs
     const loop = (now: number) => {
-      this.tick(Math.min((now - this.last) / 1000, 0.05));
+      // rAF timestamps can be earlier than `last` (background tabs): a negative step makes the easing blow up to NaN
+      this.tick(Math.max(0, Math.min((now - this.last) / 1000, 0.05)));
       this.last = now;
       this.raf = requestAnimationFrame(loop);
     };

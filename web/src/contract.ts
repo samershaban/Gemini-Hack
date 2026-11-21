@@ -82,9 +82,14 @@ export type ServerMsg =
   | ({ type: 'scoreboard' } & Scoreboard) // fields are flattened into the message
   | { type: 'secret'; round_id: string; lie_index: number; statement: number; prompt: string } // player's phone only
   | { type: 'vote_locked'; statement: number }
+  | { type: 'roster'; players: RosterEntry[] } // PROPOSED for Part A: everyone who joined, sent on every join/leave
   | { type: 'error'; detail: string };
 
 export type Role = 'voter' | 'player';
+export interface RosterEntry {
+  name: string;
+  role: Role;
+}
 
 export type ClientMsg =
   | { type: 'join'; name: string; role: Role }

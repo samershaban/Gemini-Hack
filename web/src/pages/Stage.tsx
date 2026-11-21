@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { assetUrl, getApi, isMock, mockLabel } from '../api';
-import type { AnalyzeRes, CallRes, ClipKind, ClipRes, CreateRoundRes, Measures, Phase, RevealRes, Scoreboard, ServerMsg, Tell } from '../contract';
+import type { AnalyzeRes, CallRes, ClipKind, ClipRes, CreateRoundRes, Measures, Phase, RevealRes, RosterEntry, Scoreboard, ServerMsg, Tell } from '../contract';
 import { JoinQr } from '../components/JoinQr';
 import { Eye, type EyeHandle } from '../eye/Eye';
 import type { Mood } from '../eye/EyeScene';
@@ -54,6 +54,7 @@ export default function Stage() {
   const [reveal, setReveal] = useState<RevealRes | null>(null);
   const [trick, setTrick] = useState(false);
   const [score, setScore] = useState<Scoreboard>({ gemini: 0, room: 0 });
+  const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
   const [, force] = useState(0);
@@ -90,6 +91,9 @@ export default function Stage() {
         setScore(board);
         break;
       }
+      case 'roster':
+        setRoster(m.players);
+        break;
     }
   }, []);
   useRoom(room, onMsg);
@@ -260,15 +264,18 @@ export default function Stage() {
         {anyRecording && <div className="rec-dot">REC</div>}
       </div>
 
-      {round && !verdict && (
-        <ol className="prompts">
-          {round.prompts.map((p, i) => (
-            <li key={i}>
-              <b>{i + 1}</b> {p}
-            </li>
-          ))}
-        </ol>
-      )}
+      <aside className="side-right">
+        {round && !verdict && (
+          <ol className="prompts">
+            {round.prompts.map((p, i) => (
+              <li key={i}>
+                <b>{i + 1}</b> {p}
+              </li>
+            ))}
+          </ol>
+        )}
+        {!verdict && <Roster players={roster} points={score.players} />}
+      </aside>
 
       {!verdict && !reveal && <JoinQr room={room} big={!round} />}
       <div className="chips">
@@ -392,6 +399,30 @@ function SlotButton({ label, slot, disabled, onClick }: { label: string; slot: S
       </span>
       <span className="slot-sub">{sub}</span>
     </button>
+  );
+}
+
+function Roster({ players, points }: { players: RosterEntry[]; points?: Scoreboard['players'] }) {
+  const pts = new Map(points?.map((p) => [p.name, p.points]));
+  // the stage player first, then voters in join order
+  const sorted = [...players].sort((a, b) => Number(b.role === 'player') - Number(a.role === 'player'));
+  return (
+    <div className="roster">
+      <div className="roster-tag">IN THE ROOM · {players.length}</div>
+      {players.length === 0 ? (
+        <div className="roster-empty">Scan the QR code to join</div>
+      ) : (
+        <ul>
+          {sorted.map((p) => (
+            <li key={`${p.role}:${p.name}`}>
+              <span className="roster-name">{p.name}</span>
+              {p.role === 'player' && <span className="roster-role">PLAYER</span>}
+              {pts.has(p.name) && <span className="roster-pts">{pts.get(p.name)}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

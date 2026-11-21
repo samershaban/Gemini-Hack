@@ -7,6 +7,8 @@ export function useRoom(room: string | null, onMsg: (m: ServerMsg) => void) {
   const handler = useRef(onMsg);
   handler.current = onMsg;
   const sock = useRef<RoomSocket | null>(null);
+  // messages sent before the socket exists (e.g. `join` right after tapping a button) wait here
+  const pending = useRef<ClientMsg[]>([]);
 
   useEffect(() => {
     if (!room) return;
@@ -14,6 +16,7 @@ export function useRoom(room: string | null, onMsg: (m: ServerMsg) => void) {
     getApi().then((api) => {
       if (!live) return;
       sock.current = api.connect(room, (m) => handler.current(m));
+      for (const m of pending.current.splice(0)) sock.current.send(m);
     });
     return () => {
       live = false;
@@ -22,7 +25,10 @@ export function useRoom(room: string | null, onMsg: (m: ServerMsg) => void) {
     };
   }, [room]);
 
-  return (m: ClientMsg) => sock.current?.send(m);
+  return (m: ClientMsg) => {
+    if (sock.current) sock.current.send(m);
+    else pending.current.push(m);
+  };
 }
 
 const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ';

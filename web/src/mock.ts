@@ -14,13 +14,18 @@ import type {
   CreateRoundRes,
   RevealRes,
   RoomSocket,
+  RosterEntry,
   ServerMsg,
 } from './contract';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const jitter = (base: number, spread = 0.3) => base * (1 - spread + Math.random() * spread * 2);
 
-type Envelope = { from: 'server'; msg: ServerMsg } | { from: 'client'; msg: ClientMsg };
+// `conn` identifies one socket, so the roster can drop exactly the phone that left.
+type Envelope =
+  | { from: 'server'; msg: ServerMsg }
+  | { from: 'client'; conn: string; msg: ClientMsg }
+  | { from: 'leave'; conn: string };
 
 const channels = new Map<string, BroadcastChannel>();
 function chan(room: string) {
@@ -49,6 +54,11 @@ interface MockRound {
 }
 const rounds = new Map<string, MockRound>();
 const scoreboard = { gemini: 0, room: 0 };
+const rosters = new Map<string, Map<string, RosterEntry>>(); // room -> conn -> entry
+
+// Closing a tab doesn't run close(), so announce every socket in this tab as leaving.
+const openSockets = new Map<string, string>(); // conn -> room
+addEventListener('pagehide', () => openSockets.forEach((room, conn) => emit(room, { from: 'leave', conn })));
 let seq = 0;
 
 function roundOf(id: string): MockRound {
@@ -193,12 +203,28 @@ export const mockApi: Api = {
 
   connect(room, onMsg): RoomSocket {
     const c = chan(room);
+    const conn = Math.random().toString(36).slice(2);
+    const players = rosters.get(room) ?? new Map<string, RosterEntry>();
+    rosters.set(room, players);
+    const sendRoster = () => onMsg({ type: 'roster', players: [...players.values()] });
+
     const handle = (e: Envelope) => {
       if (e.from === 'server') {
         onMsg(e.msg);
         return;
       }
-      // Act as the hub for client messages: record votes against the latest round in this room.
+      // Act as the hub for client messages. The roster: each tab keeps the one it has seen and reports
+      // it to its own listeners only (a tab opened later would otherwise broadcast an incomplete list).
+      if (e.from === 'leave') {
+        if (players.delete(e.conn)) sendRoster();
+        return;
+      }
+      if (e.msg.type === 'join') {
+        players.set(e.conn, { name: e.msg.name, role: e.msg.role });
+        sendRoster();
+        return;
+      }
+      // Votes: record against the latest round in this room.
       if (e.msg.type === 'vote') {
         const latest = [...rounds.values()].filter((r) => r.room === room).at(-1);
         latest?.votes.set(`${Math.random()}`, e.msg.statement);
@@ -209,12 +235,18 @@ export const mockApi: Api = {
     let set = localListeners.get(room);
     if (!set) localListeners.set(room, (set = new Set()));
     set.add(handle);
-    setTimeout(() => onMsg({ type: 'phase', phase: 'lobby' }), jitter(120));
+    openSockets.set(conn, room);
+    setTimeout(() => {
+      onMsg({ type: 'phase', phase: 'lobby' });
+      sendRoster(); // like the real hub: a new connection gets the current roster
+    }, jitter(120));
     return {
-      send: (msg) => emit(room, { from: 'client', msg }),
+      send: (msg) => emit(room, { from: 'client', conn, msg }),
       close() {
         c.removeEventListener('message', onEvent);
         set!.delete(handle);
+        openSockets.delete(conn);
+        emit(room, { from: 'leave', conn });
       },
     };
   },
