@@ -164,6 +164,12 @@ export default function Stage() {
     if (cur.s === 'recording') {
       const { blob } = await rec.stop();
       eye.current?.blink();
+      if (blob.size === 0) {
+        // the recorder produced nothing (seen once under heavy load); don't send an empty file
+        setSlots((s) => ({ ...s, [slot.key]: { s: 'empty' } }));
+        setError(`${slot.label} came out empty. Record it again.`);
+        return;
+      }
       return upload(slot, blob);
     }
     if (rec.recording) return; // one clip at a time
